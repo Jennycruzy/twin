@@ -133,6 +133,20 @@ score: ## Rank the estate by fragility (knockout sweep)
 	@$(SAY) "Sweeping every asset and scoring fragility."
 	@$(RUN) python -m twin.score
 
+# ------------------------------------------------------------------ stage 5
+
+writeback: ## Write fragility scores into DataHub as structured properties
+	@$(SAY) "Writing the fragility dimension into DataHub."
+	@$(RUN) python -m twin.write
+
+prove-writeback: ## Read Twin's scores back out of DataHub over MCP
+	@$(SAY) "Reading the scores back over MCP, the way an agent would."
+	@$(RUN) python -m twin.write --prove
+
+unwrite: ## Remove everything Twin wrote to DataHub
+	@$(SAY) "Removing every property Twin wrote."
+	@$(RUN) python -m twin.write --unwrite
+
 # ------------------------------------------------------------------ tests
 
 .PHONY: test
