@@ -157,12 +157,34 @@ def test_resolution_never_touches_an_incident_twin_did_not_raise():
     assert raised_on(catalog, ("urn:li:dataset:(x,y,PROD)",)).found == ()
 
 
-def test_an_asset_with_no_incidents_does_not_break_the_sweep():
+def test_an_asset_with_no_incidents_is_clean():
+    """Resolved, and genuinely carrying nothing. This is the only shape that counts as clean."""
+    catalog = FakeCatalog()
+    catalog.graph = FakeGraph({"dataset": {"incidents": {"total": 0, "incidents": []}}})
+    sweep = raised_on(catalog, ("urn:li:dataset:(x,y,PROD)",))
+    assert sweep.found == ()
+    assert sweep.is_complete
+
+
+def test_an_unresolvable_dataset_is_unreachable_not_clean():
+    """A null dataset means GMS would not resolve the asset — absent, soft-deleted or denied.
+
+    It is not an asset that happens to carry no incidents, and collapsing the two is the same
+    "could not look" mistake as swallowing an exception. It was a test asserting is_complete
+    here that hid this, which is the more useful half of the lesson.
+    """
     catalog = FakeCatalog()
     catalog.graph = FakeGraph({"dataset": None})
     sweep = raised_on(catalog, ("urn:li:dataset:(x,y,PROD)",))
     assert sweep.found == ()
-    assert sweep.is_complete
+    assert not sweep.is_complete
+    assert sweep.unreachable[0][0] == "urn:li:dataset:(x,y,PROD)"
+
+
+def test_a_dataset_with_no_incidents_block_is_unreachable_not_clean():
+    catalog = FakeCatalog()
+    catalog.graph = FakeGraph({"dataset": {"incidents": None}})
+    assert not raised_on(catalog, ("urn:li:dataset:(x,y,PROD)",)).is_complete
 
 
 class FailingGraph:

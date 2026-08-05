@@ -225,8 +225,20 @@ def raised_on(catalog: Catalog, entity_urns: tuple[str, ...]) -> IncidentSweep:
             unreachable.append((urn, str(exc).strip().splitlines()[0][:200]))
             continue
 
-        dataset = (payload or {}).get("dataset") or {}
-        block = dataset.get("incidents") or {}
+        # A null dataset is not an asset without incidents — it is an asset GMS would not
+        # resolve, because it is absent, soft-deleted or not permitted to this caller. The
+        # two collapse to the same empty list if they are allowed to, which is the exact
+        # confusion this sweep exists to prevent, so they are separated here.
+        dataset = (payload or {}).get("dataset")
+        if dataset is None:
+            unreachable.append((urn, "GMS returned no dataset for this urn"))
+            continue
+
+        block = dataset.get("incidents")
+        if block is None:
+            unreachable.append((urn, "dataset resolved but returned no incidents block"))
+            continue
+
         listed = block.get("incidents") or []
         if (block.get("total") or 0) > len(listed):
             truncated.append(urn)
