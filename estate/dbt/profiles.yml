@@ -1,8 +1,14 @@
-# dbt connects as the `twin` role, which owns every estate object.
+# Two targets, two roles, deliberately different power.
 #
-# Note what is deliberately absent: Twin's own pipeline never uses this profile. Stage 1
-# and Stage 3 read as twin_reader, and Stage 4 executes as twin_shadow, which owns nothing
-# here and therefore cannot alter or drop anything dbt built. See docs/SAFETY.md.
+#   dev     builds the estate. Connects as `twin`, which owns every estate object.
+#   shadow  rebuilds the estate inside a disposable schema during Stage 4 verification.
+#           Connects as `twin_shadow`, which owns nothing in the estate and therefore
+#           cannot alter or drop anything the dev target built, whatever it is asked to do.
+#
+# The shadow target has no default schema. TWIN_SHADOW_SCHEMA is set by the verification
+# run for the schema it created and is about to drop; a dbt invocation that reaches for
+# this target without it fails immediately rather than defaulting somewhere real.
+# See docs/SAFETY.md.
 
 estate:
   target: dev
@@ -15,6 +21,18 @@ estate:
       user: "{{ env_var('WAREHOUSE_USER', 'twin') }}"
       password: "{{ env_var('WAREHOUSE_PASSWORD', 'twin') }}"
       schema: public
+      threads: 4
+      keepalives_idle: 0
+      connect_timeout: 10
+
+    shadow:
+      type: postgres
+      host: "{{ env_var('WAREHOUSE_HOST', 'warehouse') }}"
+      port: "{{ env_var('WAREHOUSE_PORT', '5432') | int }}"
+      dbname: "{{ env_var('WAREHOUSE_DB', 'warehouse') }}"
+      user: "{{ env_var('WAREHOUSE_SHADOW_USER', 'twin_shadow') }}"
+      password: "{{ env_var('WAREHOUSE_SHADOW_PASSWORD', 'twin_shadow') }}"
+      schema: "{{ env_var('TWIN_SHADOW_SCHEMA') }}"
       threads: 4
       keepalives_idle: 0
       connect_timeout: 10

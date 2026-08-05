@@ -1,0 +1,29 @@
+# A column disappears from the FX rate feed.
+#
+# The scenario declares the fault and nothing else. What breaks, how far it spreads and how
+# long it takes are Twin's answers, not the question's — a scenario file carrying an
+# expected blast radius would let the answer be written next to the question, and the
+# grading that follows would be worthless.
+#
+# Faults are executed for real. `rate` is genuinely removed from a shadow copy of
+# stg_fx_rates, the downstream estate is genuinely rebuilt against it, and the dashboards
+# that depend on it are genuinely re-run. See docs/SAFETY.md for what stops any of that
+# reaching the real estate.
+
+name: fx_rate_column_drop
+title: The FX rate column disappears
+
+description: |
+  An upstream currency feed changes its payload and the rate column stops arriving. This is
+  the ordinary shape of a schema change: nothing is deleted, nothing alarms, and the column
+  is simply no longer there the next time anything reads it.
+
+  The interesting question is not how many assets sit downstream of stg_fx_rates. It is how
+  many of them actually read this column — a table-grain answer and a column-grain answer
+  differ here by a wide margin, and only one of them survives being executed.
+
+fault:
+  kind: drop_column
+  asset: staging.stg_fx_rates
+  column: rate
+  at: "04:12"

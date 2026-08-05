@@ -12,20 +12,24 @@ it were a fact.
 
 ## What Twin executes
 
-Nothing, today. Stage 4 — shadow execution — is not built. The role model below is in place
-and enforced by the database from the moment `make up` runs, because getting the
-foundations right before there is anything dangerous to run is cheaper than retrofitting
-them afterwards.
+Inside a schema named `twin_shadow_<scenario>`, and nowhere else:
 
-When Stage 4 lands, Twin will execute, inside a shadow schema only:
-
-- `CREATE SCHEMA twin_shadow_<scenario>` and table clones of the affected estate slice
-- the fault the scenario declares — dropping a column, revoking access, halting a refresh,
-  deleting an asset
-- real dbt builds of the downstream models against that shadow schema
-- the real dashboard-backing queries from `estate/ingest/queries/`
+- `CREATE SCHEMA twin_shadow_<scenario>`, and a view onto the real relation for every estate
+  model, so the shadow estate stands up in seconds without copying any data
+- the fault the scenario declares — today, dropping a column, which means recreating the
+  affected asset in the shadow schema without it
+- real dbt builds of the downstream models against that shadow schema, as `twin_shadow`
+- the real dashboard-backing queries from `estate/ingest/queries/`, re-pointed at the
+  shadow schema
 - `DROP SCHEMA twin_shadow_<scenario> CASCADE` in a `finally`, so two consecutive runs
   leave zero residue
+
+Every one of those statements passes the execution boundary described below before it is
+sent. `make dry-run` prints the complete list for a scenario and executes none of it.
+
+Fault kinds that are not yet built — revoking access, halting a refresh, deleting an asset —
+are rejected by the scenario loader rather than silently accepted, because a fault the
+execution layer cannot run would produce a prediction nothing could grade.
 
 ## The three roles
 
@@ -65,18 +69,31 @@ do: make new empty namespaces.
 
 ## The second layer, and why there are two
 
-A second guard belongs to Stage 4 and is **not built yet**: an execution boundary in Twin's
-code that inspects every statement before it is sent and refuses any destructive one naming
-an object outside a mandatory, non-configurable `twin_shadow_` prefix.
+The execution boundary lives in `twin/verify/guard.py` and every statement Twin sends passes
+through it, because the check is inside `execute` rather than at the call sites — there is no
+unguarded path to the database in the codebase.
 
-Two layers, because they fail differently. The database guard cannot be bypassed by a bug
-in Twin, but it also cannot stop Twin from doing something destructive *inside* a shadow
-schema that the operator did not intend — it has no idea what Twin meant to do. The code
-guard understands intent but is only as correct as the code. Neither alone is sufficient;
-together they cover each other's failure mode.
+Its rule is narrow and mechanical. A statement is either read-only, in which case it may read
+anything the role can see including the real estate, or it is destructive, in which case the
+object it acts on must be inside *this run's* shadow schema. A shadow prefix alone is not
+enough: naming another run's shadow schema is refused too, so two concurrent scenarios cannot
+corrupt each other's evidence. Anything the guard cannot confidently classify is refused,
+which means teaching it a new fault kind is a deliberate act rather than something that
+happens by accident.
 
-Stage 4 will also ship a dry-run mode that prints every statement it would execute without
-executing any of them, so the statements can be read before they are trusted.
+The statements it is asked to refuse are in `tests/test_execution_guard.py`, including
+`DROP TABLE marts.mart_revenue_daily` — the statement this layer exists to stop — as well as
+destructive verbs hidden behind comments, multi-statement strings, and unqualified names that
+would resolve through a `search_path` Twin does not control.
+
+Two layers, because they fail differently. The database guard cannot be bypassed by a bug in
+Twin, but it also cannot stop Twin doing something destructive *inside* a shadow schema that
+the operator did not intend — it has no idea what Twin meant to do. The code guard
+understands intent but is only as correct as the code. Neither alone is sufficient; together
+they cover each other's failure mode.
+
+`make dry-run` prints every statement a scenario would execute and executes none of them, so
+the statements can be read before they are trusted.
 
 ## What is deliberately not secured
 

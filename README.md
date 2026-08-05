@@ -16,7 +16,7 @@ repository. Nothing below is aspirational.
 |---|---|---|
 | **M1** | The demo estate — warehouse, dbt project, DataHub ingestion, verification gate | **Done** |
 | **M2** | Stage 1 — read the estate through the DataHub MCP server | **Done** |
-| M3 | Stage 4 — shadow execution and self-grading | Not started |
+| **M3** | Stage 4 — shadow execution and self-grading | **Done** |
 | M4 | Stage 2 — propagation engine and failure timelines | Not started |
 | M5 | Stage 3 — fragility scoring and the knockout sweep | Not started |
 | M6 | Stage 5 — write-back, incidents, repair PRs | Not started |
@@ -215,6 +215,91 @@ widens as stages land — fragility scores join it when Stage 3 exists — but i
 append-only and a line is written only when a run genuinely succeeded. A trend cannot be
 backfilled, so the accumulation starts now rather than the week of a deadline.
 
+## Stage 4: executing the failure and grading the prediction
+
+This is the part the project stands on. Twin does not ask you to believe a simulation — it
+removes the column for real, rebuilds the real downstream models against the result, re-runs
+the real dashboard queries, and then scores its own prediction against what actually broke.
+
+```
+make run                                        # the default scenario
+make run SCENARIO=scenarios/<name>.yml          # any scenario
+make dry-run                                    # print every statement, execute none
+```
+
+A run performs **two experiments**, because they answer different questions and only one of
+them is hard.
+
+**Does it read the dropped column?** Each downstream model is built on its own while every
+other model is a healthy view onto production. A model that fails here fails because of the
+fault itself, not because something upstream is missing. This is the falsifiable test: a
+model Twin predicted would break and that builds cleanly is a false alarm with nowhere to
+hide.
+
+```
+  DOES IT READ THE DROPPED COLUMN?
+  --------------------------------------------------------------------------
+    each model built alone, everything else healthy — the falsifiable test
+    scope: 14 models
+
+    hit          intermediate.int_orders_enriched      Database Error in model int_orders_...
+    hit          intermediate.int_payment_attempts     Database Error in model int_payment_...
+    hit          marts.mart_subscription_health        Database Error in model mart_subscri...
+
+    predicted 3   observed 3   precision 1.00   recall 1.00
+    11 model(s) in scope did not break — each one a chance to raise a false alarm
+    note: a perfect score on one scenario is weak evidence, not strong
+```
+
+The eleven models that did not break are the point. They sit downstream of `stg_fx_rates`
+and a table-grain blast radius would have condemned every one of them. Column-grain lineage
+said they were fine, and executing the fault agreed.
+
+**What does a full refresh look like?** The second experiment drops those views and rebuilds
+the whole downstream estate at once, the way a nightly refresh would. Two models fail on
+their own and twelve are never produced, which is what a consumer actually experiences.
+
+```
+  CONSUMER QUERIES
+  --------------------------------------------------------------------------
+    15 real queries re-run against the shadow estate, 11 failed
+    failed       revenue_trend.sql            Finance — Revenue Review   96/day
+                 relation "twin_shadow_fx_rate_column_drop.mart_revenue_daily" does not exist
+```
+
+Those are the same queries the consumer workload executes on every `make estate` — the ones
+DataHub's usage statistics were counted from. They were not written for this demonstration.
+
+### What is and is not being claimed
+
+- **The failures are real.** Every error printed is the error PostgreSQL returned, from a
+  real dbt build of the real project against a warehouse where the column genuinely does not
+  exist.
+- **The scores are scoped before they are calculated.** Only models the experiment could
+  observe are graded. Twin also predicts that dashboards, charts and the ML branch break;
+  a dbt build cannot observe those, so they are listed as ungraded and counted nowhere.
+- **The ordering of the timeline is not verified.** Twin predicts that a `daily_0700` table
+  breaks at 07:00 and a `daily_0800` mart an hour later. Verification grades *which* assets
+  broke, not *when* — checking the clock would mean holding a warehouse for a simulated day.
+- **One scenario is weak evidence.** Precision and recall of 1.00 on a single fault says the
+  column lineage was right about fourteen models. It does not say the model generalises, and
+  the report says so on every run rather than only when it is convenient.
+
+### Safety
+
+Twin executes destructive statements, so the guardrails are structural. Full detail is in
+[docs/SAFETY.md](docs/SAFETY.md); the short version is two layers that fail differently.
+
+The database layer: every estate object is owned by `twin`, and Stage 4 connects as
+`twin_shadow`, which owns nothing. In PostgreSQL `DROP TABLE` and `ALTER TABLE` require
+ownership and ownership cannot be assumed at will, so `twin_shadow` is structurally incapable
+of altering a real estate table whatever statement it is handed.
+
+The code layer: an execution boundary that every statement passes through, which refuses any
+destructive statement naming anything outside *this run's* `twin_shadow_` schema — including
+another run's shadow schema. `tests/test_execution_guard.py` shows exactly what it refuses,
+starting with `DROP TABLE marts.mart_revenue_daily`.
+
 ## Architecture
 
 Five stages, two feedback loops, three entry points.
@@ -270,6 +355,8 @@ credentials, no paid tier.
 | `make verify-estate` | Prove the estate is real; exits non-zero if not |
 | `make read` | Read the estate over MCP and cache the graph |
 | `make graph` | Print the cached graph without touching DataHub |
+| `make run` | Run a scenario through stages 1-4 and grade the prediction |
+| `make dry-run` | Print every statement a scenario would execute, execute none |
 | `make test` | Run the test suite |
 | `make down` | Stop everything and remove the volumes |
 | `make help` | List every target that exists |
@@ -310,7 +397,13 @@ Honest and specific, and this list will grow rather than shrink as stages land.
 - **Stage 1 sees only what MCP exposes.** Usage statistics, column-to-column lineage and
   the ML deployment are not reachable through the interface Twin reads from — see *What the
   MCP server does not expose*. Everything Twin scores is built from what is listed there.
-- **Stages 2 through 5 do not exist yet.** See the build status table.
+- **One fault kind is executable.** `drop_column` runs end to end. Revoking access, halting a
+  refresh and deleting an asset are declared unexecutable by the scenario loader rather than
+  silently accepted, because a fault Twin cannot run produces a prediction nothing can grade.
+- **Verification grades what broke, not when.** The predicted timeline's ordering is not
+  checked by shadow execution. See *What is and is not being claimed*.
+- **Stages 2, 3 and 5 are partial or absent.** Stage 2 exists only as the propagation needed
+  to feed verification — one fault kind, one scenario. See the build status table.
 
 ## License
 

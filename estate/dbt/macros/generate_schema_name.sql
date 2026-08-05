@@ -9,8 +9,21 @@
     layer in the same apparent namespace.
 #}
 
+{#
+    The shadow target is the exception. Stage 4 rebuilds the estate inside a single
+    disposable schema, so every model collapses onto target.schema there: a rebuilt model
+    and the passthrough view it reads resolve the same way, and teardown is one DROP SCHEMA
+    rather than a sweep across six.
+
+    This cannot widen the blast radius. The shadow target connects as twin_shadow, which
+    holds no CREATE on any estate schema, so a model that resolved to `marts` under this
+    target would be refused by the database rather than overwrite anything.
+#}
+
 {% macro generate_schema_name(custom_schema_name, node) -%}
-    {%- if custom_schema_name is none -%}
+    {%- if target.name == 'shadow' -%}
+        {{ target.schema }}
+    {%- elif custom_schema_name is none -%}
         {{ target.schema }}
     {%- else -%}
         {{ custom_schema_name | trim }}

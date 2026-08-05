@@ -1,0 +1,38 @@
+# The test suite, on every push.
+#
+# Installing from requirements.txt rather than reusing a prebuilt image is deliberate. The
+# failure this is here to catch is exactly that drift: a dependency added to requirements.txt
+# that nobody installed, so a target that looks green locally cannot actually run. Building
+# the environment from the declared dependencies is what makes that visible.
+#
+# These tests need neither DataHub nor a warehouse. The integration checks that do —
+# `make verify-estate` and `make run` — are exercised by the nightly workflow, which stands
+# the whole stack up.
+
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # Matches docker/twin.Dockerfile. mcp-server-datahub requires >=3.11.
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install the declared dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run the tests
+        run: python -m pytest

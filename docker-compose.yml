@@ -304,6 +304,9 @@ services:
       WAREHOUSE_DB: ${WAREHOUSE_DB:-warehouse}
       WAREHOUSE_USER: ${WAREHOUSE_USER:-twin}
       WAREHOUSE_PASSWORD: ${WAREHOUSE_PASSWORD:-twin}
+      # Stage 4 executes as a role that owns nothing in the estate. See docs/SAFETY.md.
+      WAREHOUSE_SHADOW_USER: ${WAREHOUSE_SHADOW_USER:-twin_shadow}
+      WAREHOUSE_SHADOW_PASSWORD: ${WAREHOUSE_SHADOW_PASSWORD:-twin_shadow}
       TWIN_SEED: ${TWIN_SEED:-20260805}
       DBT_PROFILES_DIR: /app/estate/dbt
       PYTHONUNBUFFERED: "1"

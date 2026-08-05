@@ -105,6 +105,20 @@ read: ## Read the estate from DataHub over MCP and cache the graph
 graph: ## Print the cached estate graph without touching DataHub
 	@$(RUN) python -m twin.read --cached
 
+# ------------------------------------------------------------------ stage 4: verify
+
+SCENARIO ?= scenarios/fx_rate_column_drop.yml
+
+.PHONY: run
+run: ## Run one scenario end to end (SCENARIO=scenarios/<name>.yml)
+	@$(SAY) "Running $(SCENARIO) through stages 1-4."
+	@$(RUN) python -m twin.run $(SCENARIO)
+
+.PHONY: dry-run
+dry-run: ## Print every statement a scenario would execute, without executing any
+	@$(SAY) "Dry run of $(SCENARIO)."
+	@$(RUN) python -m twin.run $(SCENARIO) --dry-run
+
 # ------------------------------------------------------------------ tests
 
 .PHONY: test
