@@ -18,7 +18,7 @@ repository. Nothing below is aspirational.
 | **M2** | Stage 1 — read the estate through the DataHub MCP server | **Done** |
 | **M3** | Stage 4 — shadow execution and self-grading | **Done** |
 | **M4** | Stage 2 — propagation engine and failure timelines | **Done** |
-| M5 | Stage 3 — fragility scoring and the knockout sweep | Not started |
+| **M5** | Stage 3 — fragility scoring and the knockout sweep | **Done** |
 | M6 | Stage 5 — write-back, incidents, repair PRs | Not started |
 
 The pipeline is deliberately not being built in pipeline order. Stage 4 — executing a real
@@ -329,6 +329,53 @@ asset to fail is paged first whether or not theirs is the important one. The uno
 are listed rather than dropped: an asset that pages nobody is more dangerous than one that
 does, and a response plan that silently omits them describes an incident nobody attends.
 
+## Stage 3: scoring fragility
+
+```
+make score
+```
+
+The estate contains structural weaknesses that are **not annotated anywhere in this
+repository**. The scoring model is correct to the extent that it finds them without being
+told, and the case that decides it is where size and danger disagree.
+
+`raw_pg.orders` has the widest reach of anything here — 16 datasets and 22 consumers.
+`raw_pg.fx_rates` reaches less: 15 and 21. A scorer that ranks by fan-out returns orders.
+
+```
+   #  ASSET                             SCORE   blast  expos  recov  conce  blind   BLAST
+   1  raw_pg.fx_rates                    77.9    0.95   0.95   1.00   0.29   0.12   15+21
+   2  staging.stg_fx_rates               77.4    0.92   0.95   1.00   0.30   0.12   14+21
+   3  intermediate.int_orders_enriched   58.6    0.87   0.93   0.33   0.35   0.00   12+21
+   4  raw_pg.orders                      55.1    1.00   1.00   0.00   0.26   0.12   16+22
+```
+
+Orders wins on blast **and** on exposure — the two components most scorers would use — and
+loses on recovery, because it has a standby and the FX feed does not. That single difference
+is the whole ranking, and it is the one that matters operationally: losing orders is
+survivable because the data can be served from elsewhere; losing fx_rates is not.
+
+**The sweep does not count graph edges.** It runs the propagation model once per asset with a
+`drop_asset` fault — the same model Stage 4 executes against a real warehouse — and reads the
+blast radius off the resulting timeline. That means a fragility score is a claim shadow
+execution can be pointed at and made to prove or disprove. A number derived from adjacency
+could not be checked against anything.
+
+Every component is printed beside the total, because a fragility number nobody can take apart
+is a number nobody should act on. The weights live in `config/scoring.yml` so that
+disagreement is a config change rather than an argument with a black box, and each component
+is explained in [docs/SCORING.md](docs/SCORING.md).
+
+Three limits, stated where they can be seen rather than discovered:
+
+- **Scores are positions within this estate**, not absolute values. Blast and exposure are
+  normalised against this platform's own maximum, so two estates' numbers are not comparable.
+- **Recovery depends on metadata existing.** On an estate where nobody records replication,
+  that component degenerates to a constant and the ranking collapses back toward fan-out —
+  which is to say, back toward the wrong answer.
+- **The model finds the weaknesses planted in this estate.** That is evidence it is not
+  arbitrary. It is not evidence that it generalises.
+
 ## Stage 4: executing the failure and grading the prediction
 
 This is the part the project stands on. Twin does not ask you to believe a simulation — it
@@ -471,6 +518,7 @@ credentials, no paid tier.
 | `make graph` | Print the cached graph without touching DataHub |
 | `make run` | Run a scenario through stages 1-4 and grade the prediction |
 | `make scenarios` | Run all five scenarios in turn |
+| `make score` | Rank every asset by fragility |
 | `make dry-run` | Print every statement a scenario would execute, execute none |
 | `make test` | Run the test suite |
 | `make down` | Stop everything and remove the volumes |

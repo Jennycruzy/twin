@@ -126,9 +126,17 @@ scenarios: ## Run every scenario in scenarios/ and grade each one
 		$(RUN) python -m twin.run $$scenario || exit 1; \
 	done
 
+# ------------------------------------------------------------------ stage 3: score
+
+.PHONY: score
+score: ## Rank the estate by fragility (knockout sweep)
+	@$(SAY) "Sweeping every asset and scoring fragility."
+	@$(RUN) python -m twin.score
+
 # ------------------------------------------------------------------ tests
 
 .PHONY: test
 test: ## Run the test suite
 	@$(SAY) "Running tests."
 	@$(RUN) python -m pytest
+

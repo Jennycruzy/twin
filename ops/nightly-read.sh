@@ -26,6 +26,7 @@ export HOME="${HOME:-/root}"
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 HISTORY="examples/history/nightly.jsonl"
+SCORES="examples/history/fragility.jsonl"
 
 say() { printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1"; }
 
@@ -42,14 +43,17 @@ docker compose run --rm -T twin python -m estate.verify_estate
 say "reading the estate over MCP"
 docker compose run --rm -T twin python -m twin.read --append-history "$HISTORY"
 
-if git diff --quiet -- "$HISTORY"; then
+say "scoring fragility"
+docker compose run --rm -T twin python -m twin.score --append-history "$SCORES"
+
+if git diff --quiet -- "$HISTORY" "$SCORES"; then
   say "no new history line; the read must have failed"
   exit 1
 fi
 
 git config user.name jennycruzy
 git config user.email jennycruzy@users.noreply.github.com
-git add "$HISTORY"
+git add "$HISTORY" "$SCORES"
 git commit -q -m "Record the nightly estate read for $(date -u +%Y-%m-%d)"
 git push -q origin main
 

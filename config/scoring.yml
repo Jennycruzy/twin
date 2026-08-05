@@ -1,0 +1,41 @@
+# Fragility weights.
+#
+# Externalised so that the model can be argued with rather than reverse-engineered from
+# code. Every component below is measured from the estate — none is a judgement about the
+# estate that Twin brought with it — and every score Twin publishes is reproducible from
+# this file plus the graph.
+#
+# The weights themselves are a claim about what makes an asset dangerous, and reasonable
+# people would choose differently. What is not negotiable is that the score is auditable:
+# `make score` prints each component beside the total, so a ranking can be disputed on its
+# parts instead of accepted or rejected whole.
+#
+# See docs/SCORING.md for what each component means and why it is weighted this way.
+
+weights:
+  # How much falls over. The obvious component, and deliberately not the largest — an
+  # asset with a wide blast radius and a standby is less dangerous than a narrow one
+  # without.
+  blast: 0.25
+
+  # How much of what falls over is actually read, measured in query executions that really
+  # happened. Separates a mart three dashboards refresh hourly from an unread intermediate.
+  exposure: 0.25
+
+  # Whether the estate can serve this from anywhere else: replication and declared
+  # fallbacks, on the asset and on the sources it depends on. This is what makes the FX
+  # feed more dangerous than the larger orders feed.
+  recovery: 0.25
+
+  # Who can fix it. An asset whose blast radius is owned by one person, or by nobody, takes
+  # longer to recover regardless of size.
+  concentration: 0.15
+
+  # How long the damage sits before a consumer notices. Slow-refreshing assets score higher
+  # here: a mart that quietly serves yesterday's numbers until tomorrow morning is worse
+  # than one that fails loudly at once.
+  blindness: 0.10
+
+# Detection latency is normalised against this. Damage that takes longer than a full day to
+# reach anyone a person looks at is capped rather than allowed to dominate the ranking.
+detection_horizon_hours: 24
