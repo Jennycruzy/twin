@@ -7,10 +7,19 @@ statement it receives. But the database has no idea what Twin *meant* to do, so 
 stop Twin from destroying the wrong thing inside a shadow schema. This guard understands
 intent and is only as correct as the code below, which is why it is not the only layer.
 
-The rule it enforces is narrow and mechanical. Every statement Twin issues is either
+The rule it enforces is narrow and mechanical. Every statement Twin issues is routed to one
+of two paths:
 
-* read-only, and may read anything the role can see, including the real estate; or
+* read-only, which may read anything the role can see, including the real estate, and which
+  is executed inside a PostgreSQL READ ONLY transaction; or
 * destructive, in which case the object it acts on must be inside this run's shadow schema.
+
+The split matters more than it looks. This module cannot tell by inspection whether a
+statement writes — a WITH query may contain a DELETE, and EXPLAIN ANALYZE runs what it
+explains — so it does not try to. It decides only which path a statement takes, and the
+read-only path is made read-only by the server rather than by this file's confidence in its
+own pattern matching. That is why the classification is returned to the caller instead of
+being a private judgement: a caller that ignores it reopens the hole.
 
 Anything the guard cannot confidently classify is refused. A guard that guesses is worse
 than no guard, because it produces confidence rather than safety. The consequence is that
@@ -33,10 +42,27 @@ _WHITESPACE = re.compile(r"\s+")
 
 _IDENTIFIER = r'(?:"[^"]+"|[A-Za-z_][A-Za-z0-9_$]*)'
 
-# Statements that cannot modify anything. They may name estate objects freely: cloning a
-# slice into a shadow schema means reading the real tables, and forbidding that would
-# forbid the feature.
+# Statements routed to the read-only connection. They may name estate objects freely:
+# cloning a slice into a shadow schema means reading the real tables, and forbidding that
+# would forbid the feature.
+#
+# This pattern does NOT prove a statement is read-only, and must not be read as if it did.
+# PostgreSQL permits INSERT, UPDATE and DELETE inside a WITH query, and EXPLAIN ANALYZE
+# executes the statement it explains, so a leading keyword says nothing about what the
+# statement does. Both forms were confirmed to modify data through this classification
+# before the read-only transaction below existed.
+#
+# What the pattern decides is where a statement runs, not whether it is safe. Anything it
+# matches is executed inside a READ ONLY transaction, and PostgreSQL then refuses any write
+# nested anywhere within it, at any depth. The guarantee is the server's; this regex only
+# has to be conservative enough to send genuine writes down the other path, where their
+# target is checked. See :meth:`twin.verify.warehouse.ShadowConnection._transaction`.
 _READ_ONLY = re.compile(r"^(select|with|explain|show)\b", re.IGNORECASE)
+
+# How a statement is executed. The caller is obliged to act on this: a classification that
+# is returned and ignored puts a modifying CTE on the writable connection.
+READ_ONLY = "read_only"
+DESTRUCTIVE = "destructive"
 
 # Destructive forms Twin is allowed to issue, each paired with the object it acts on. The
 # list is short on purpose: it grows only when a stage genuinely needs a new form, and each
@@ -143,12 +169,17 @@ def _schema_of(target: str) -> str:
     return _unquote(target.split(".", 1)[0])
 
 
-def assert_safe(sql: str, shadow_schema: str) -> None:
+def assert_safe(sql: str, shadow_schema: str) -> str:
     """Raise :class:`UnsafeStatement` unless this statement may be executed.
 
     ``shadow_schema`` is the schema this run owns. Naming *any other* schema in a
     destructive statement is refused even if that schema is itself a shadow schema, so a
     run cannot reach into a concurrent run's workspace.
+
+    Returns :data:`READ_ONLY` or :data:`DESTRUCTIVE`: how the statement must be executed,
+    not merely a note about what it appears to be. A ``DESTRUCTIVE`` result has had its
+    target proven to lie inside ``shadow_schema``; a ``READ_ONLY`` result has proven
+    nothing and is only safe if the caller runs it in a read-only transaction.
     """
     if not is_shadow_schema(shadow_schema):
         raise UnsafeStatement(
@@ -166,7 +197,7 @@ def assert_safe(sql: str, shadow_schema: str) -> None:
         )
 
     if _READ_ONLY.match(statement):
-        return
+        return READ_ONLY
 
     for pattern in _DESTRUCTIVE:
         match = pattern.match(statement)
@@ -175,7 +206,7 @@ def assert_safe(sql: str, shadow_schema: str) -> None:
         target = match.group(1)
         schema = _schema_of(target)
         if schema == shadow_schema:
-            return
+            return DESTRUCTIVE
         raise UnsafeStatement(
             f"refusing to modify {target!r}: outside this run's shadow schema "
             f"{shadow_schema!r}"

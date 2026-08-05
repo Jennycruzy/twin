@@ -75,18 +75,53 @@ The execution boundary lives in `twin/verify/guard.py` and every statement Twin 
 through it, because the check is inside `execute` rather than at the call sites — there is no
 unguarded path to the database in the codebase.
 
-Its rule is narrow and mechanical. A statement is either read-only, in which case it may read
-anything the role can see including the real estate, or it is destructive, in which case the
-object it acts on must be inside *this run's* shadow schema. A shadow prefix alone is not
-enough: naming another run's shadow schema is refused too, so two concurrent scenarios cannot
-corrupt each other's evidence. Anything the guard cannot confidently classify is refused,
-which means teaching it a new fault kind is a deliberate act rather than something that
-happens by accident.
+Its rule is narrow and mechanical. A statement is routed as either read-only, in which case
+it may read anything the role can see including the real estate, or destructive, in which
+case the object it acts on must be inside *this run's* shadow schema. A shadow prefix alone
+is not enough: naming another run's shadow schema is refused too, so two concurrent scenarios
+cannot corrupt each other's evidence. Anything the guard cannot confidently classify is
+refused, which means teaching it a new fault kind is a deliberate act rather than something
+that happens by accident.
 
-The statements it is asked to refuse are in `tests/test_execution_guard.py`, including
-`DROP TABLE marts.mart_revenue_daily` — the statement this layer exists to stop — as well as
-destructive verbs hidden behind comments, multi-statement strings, and unqualified names that
-would resolve through a `search_path` Twin does not control.
+### Why read-only is enforced by the server
+
+The guard routes on a statement's leading keyword, and a leading keyword does not establish
+what a statement does. PostgreSQL permits `INSERT`, `UPDATE` and `DELETE` inside a `WITH`
+query, and `EXPLAIN ANALYZE` executes the statement it explains. Both forms are classified
+read-only, and an earlier version of this document claimed a code-level guarantee that
+neither of them honoured: against a writable connection,
+`WITH d AS (DELETE FROM … RETURNING *) SELECT * FROM d` and `EXPLAIN ANALYZE DELETE FROM …`
+both modified data after passing the guard.
+
+The role model already contained the damage — `twin_shadow` holds only `SELECT` on the
+estate, so both statements were refused by PostgreSQL when aimed at a real table, and no
+estate data was ever reachable this way. What the role model did **not** cover is the case
+the guard was written for: `twin_shadow` owns every shadow schema, so a modifying CTE naming
+*another run's* shadow schema passed both layers. That corrupts a verification rather than
+the estate, and a corrupted verification still looks like evidence, which makes it the worse
+of the two failures.
+
+So the read-only path is no longer a claim this codebase makes about a regex. Every statement
+routed as read-only executes inside a `BEGIN READ ONLY` transaction, and PostgreSQL refuses
+any write nested anywhere inside it, at any depth. Tightening the pattern would not have been
+sufficient — a write can be nested arbitrarily deep — and `psycopg`'s connection-level
+`read_only` flag is silently ineffective under `autocommit`, which was measured rather than
+assumed: both statements above still executed and still deleted rows with it set.
+
+The statements the boundary is asked to refuse or contain are in
+`tests/test_execution_guard.py`, including `DROP TABLE marts.mart_revenue_daily` — the
+statement this layer exists to stop — as well as destructive verbs hidden behind comments,
+multi-statement strings, unqualified names that would resolve through a `search_path` Twin
+does not control, and the modifying-CTE and `EXPLAIN ANALYZE` forms above.
+
+### What the boundary does not cover
+
+dbt's own connection does not pass through the guard. Stage 4 invokes dbt as a subprocess and
+it opens its own connection from `estate/dbt/profiles.yml`, so every statement dbt issues —
+which is most of the SQL a scenario causes to run — is constrained by the role model alone.
+This is deliberate: dbt's SQL is generated from the estate's own models, and interposing on
+it would mean reimplementing dbt's adapter. It is stated here because "every statement Twin
+sends passes the guard" is true only of the statements Twin sends itself.
 
 Two layers, because they fail differently. The database guard cannot be bypassed by a bug in
 Twin, but it also cannot stop Twin doing something destructive *inside* a shadow schema that
