@@ -2,12 +2,12 @@
 
 **Twin is chaos engineering for data platforms.** It reads DataHub's context graph,
 simulates failures across it, executes those failures for real against a live warehouse to
-verify its own predictions, and ranks the estate by what it found.
+verify its own predictions, and writes fragility scores back into DataHub as structured
+properties, so every other agent inherits a dimension the catalog didn't have before.
 
-Writing those scores back into DataHub — so every other agent inherits a dimension the
-catalog didn't have before — is the point of the project and is the one milestone still
-unbuilt. It is M6 in the table below, and this README does not describe it in the present
-tense until it exists.
+Those scores are read back out *over MCP* — the same interface another agent would use to
+find them — by `make prove-writeback`, and removed by `make unwrite`. Incidents on assets
+that failed verification are the remaining part of that stage and are not built yet.
 
 ---
 
@@ -24,7 +24,9 @@ same sentence, and never in the present tense.
 | **M3** | Stage 4 — shadow execution and self-grading | **Done** |
 | **M4** | Stage 2 — propagation engine and failure timelines | **Done** |
 | **M5** | Stage 3 — fragility scoring and the knockout sweep | **Done** |
-| M6 | Stage 5 — write-back, incidents, repair PRs | Not started |
+| **M6** | Stage 5 — write-back of fragility as structured properties | **Done** |
+| M6b | Stage 5 — incidents on assets that failed verification | Not started |
+| M7 | Repair PRs, CI gate | Not started |
 
 The pipeline is deliberately not being built in pipeline order. Stage 4 — executing a real
 fault and grading the prediction against what actually broke — is the component the whole
@@ -217,6 +219,13 @@ Recorded here rather than worked around, because the gaps shape what later stage
   Two further wrinkles worth knowing if you build on this interface: absence of a path is
   reported by raising rather than by returning an empty result, in two different wordings,
   and a pair that cannot be resolved is counted and assumed connected rather than dropped.
+- **No write tool at all.** The server exposes six tools — `search`, `get_lineage`,
+  `get_dataset_queries`, `get_entities`, `list_schema_fields`, `get_lineage_paths_between` —
+  and every one of them reads. An agent can consume the context graph over MCP but cannot
+  contribute to it, which is a gap in the premise rather than in coverage: the case for an
+  agent-facing catalog interface is that agents participate in the graph. Stage 5 therefore
+  writes through the SDK and reads back over MCP, and says so wherever it claims a round
+  trip. This is the second documented exception, after usage statistics.
 - **No `mlModelDeployment`.** It is not searchable through the filter syntax and its
   properties are not returned by `get_entities`, so Twin's ML branch is modelled as far as
   the model itself. The deployment is the one estate entity the pipeline cannot see, and
@@ -499,6 +508,74 @@ by PostgreSQL rather than by a pattern match. `tests/test_execution_guard.py` sh
 what it refuses, starting with `DROP TABLE marts.mart_revenue_daily`. See *Safety* below for
 what that layer got wrong first.
 
+## Stage 5: writing the fragility dimension back
+
+Everything up to here produces a ranking that lives in this repository, and a ranking in a
+repository is a report. Reports are read by the person who ran them. A structured property on
+the asset is read by whoever opens the asset, and by any agent that asks the catalog what it
+knows — which is the claim the project is actually making.
+
+```
+make writeback         # define the properties and write every score   (~40s)
+make prove-writeback   # read them back out over MCP                   (~30s)
+make unwrite           # remove every value Twin wrote                 (~30s)
+```
+
+```
+   RANK  ASSET                                      SCORE  BLAST  BUS  SPOF
+  --------------------------------------------------------------------------
+      1  raw_pg.fx_rates                           61.517     36    4    no
+      2  staging.stg_fx_rates                      61.314     35    4    no
+      3  intermediate.int_orders_enriched          43.325     33    3    no
+      4  staging.stg_orders                        37.939     37    4    no
+      5  raw_pg.orders                             37.775     38    5    no
+  --------------------------------------------------------------------------
+  66 of 66 assets carry Twin's properties, read over MCP
+  provenance in the catalog: graph 2b0ff33cd937f51f; commit 47adecc; weights a65901c08535194f
+```
+
+Thirteen properties per dataset: the fragility score, its complement as a resilience score,
+rank, blast radius, bus factor, a single-point-of-failure flag, when it was scored, the
+provenance line above, and all five score components. The components are published because a
+score nobody can take apart is a score nobody should act on, and that principle should
+survive into the catalog rather than stopping at this repository's stdout. Each property
+carries the rule it was computed by in its own description, so a ranking can be disputed on
+its parts inside DataHub.
+
+**`make prove-writeback` is the target that matters.** Writing through the SDK and reading
+back through the SDK would prove only that the SDK is self-consistent. Reading back over MCP
+proves the score is visible through the interface another agent would use to find it. The
+table is ordered by the rank DataHub returned rather than by one recomputed locally, so a
+disagreement between the catalog and the scorer appears here instead of being hidden by the
+sort.
+
+### Removing it, and a DataHub constraint worth knowing
+
+`make unwrite` clears every value Twin wrote and deliberately leaves the thirteen definitions
+in place. That looks like the less tidy choice and is the correct one.
+
+Hard-deleting a structured property removes the entity but leaves its Elasticsearch field
+mapping behind. Defining the same `qualifiedName` afterwards is rejected:
+
+```
+Structured property Elasticsearch field 'twin_fragility_score' collides with
+existing property mapping.
+```
+
+The name is burnt for the life of the index. So an `unwrite` that deleted definitions would
+make the *second* `make writeback` fail — which is exactly the sequence a judge runs. This
+was found by doing it: the first implementation deleted them, and recovering the names on the
+development stack required dropping `datasetindex_v2`, recreating it through DataHub's own
+`SystemUpdate` job and repopulating it with `RestoreIndices`.
+
+A definition holding no values appears on no asset and in no search result, so it is not the
+residue that matters. For anyone who wants the catalog truly empty and accepts that the names cannot be reused
+without rebuilding the index:
+
+```
+docker compose run --rm twin python -m twin.write --unwrite --purge
+```
+
 ## Architecture
 
 Five stages, two feedback loops, three entry points.
@@ -522,6 +599,8 @@ Five stages, two feedback loops, three entry points.
      make run SCENARIO=...   one scenario — stages 1-4, report to stdout
      make scenarios          all five, each graded
      make score              stage 3 — rank the estate by fragility
+     make writeback          stage 5 — write fragility into DataHub
+     make prove-writeback    read it back over MCP
 
    Planned, and deliberately not in the Makefile until they work:
      make nightly            scheduled — full pipeline, writes back, opens incidents
@@ -530,7 +609,8 @@ Five stages, two feedback loops, three entry points.
 
 The nightly job that runs today is `ops/nightly-read.sh` and
 `.github/workflows/twin-nightly.yml`, described under *The nightly read*. They verify, read
-and score; they do not write back, because there is nothing to write back with yet.
+and score. Wiring `make writeback` into them is a one-line change and is not made yet, so the
+scores in the catalog are from the last manual run rather than from last night.
 
 Twin has no chat interface and will not be getting one. It is invoked by a scheduler, a
 scenario file, or a CI trigger.
@@ -581,13 +661,17 @@ credentials, no paid tier.
 | `make scenarios` | Run all five scenarios in turn |
 | `make score` | Rank every asset by fragility |
 | `make dry-run` | Print every statement a scenario would execute, execute none |
+| `make writeback` | Write fragility into DataHub as structured properties |
+| `make prove-writeback` | Read Twin's scores back out over MCP |
+| `make unwrite` | Remove every value Twin wrote |
 | `make test` | Run the test suite |
 | `make down` | Stop everything and remove the volumes |
 | `make help` | List every target that exists |
 
 Timings on a 4-core VPS, measured from a fresh clone with the volumes wiped rather than on a
 warm machine: `make up` 2m13s, `make estate` 2m08s, `make verify-estate` 36s, `make read`
-10-12 minutes, `make run` about a minute per scenario.
+10-12 minutes, `make run` about a minute per scenario, `make writeback` 40s,
+`make prove-writeback` 30s.
 
 The read is the outlier and the reason the graph is cached. It is dominated by round trips
 to GMS rather than by Twin — resolving which column each dependency lands on is roughly
@@ -647,10 +731,12 @@ Honest and specific, and this list will grow rather than shrink as stages land.
   variation on the five.
 - **Verification grades what broke, not when.** The predicted timeline's ordering is not
   checked by shadow execution. See *What is and is not being claimed*.
-- **Stage 5 does not exist yet.** Twin reads DataHub, scores against it and grades itself,
-  but writes nothing back, so the fragility dimension lives in this repository rather than in
-  the catalog. That is the largest gap between what Twin is and what it is for. See the build
-  status table.
+- **Stage 5 writes properties, not incidents.** Fragility is in the catalog and readable over
+  MCP, but an asset that Stage 4 *proved* broken does not yet raise a DataHub incident, so the
+  verification result stays in this repository. See the build status table.
+- **Write-back goes through the SDK**, because the MCP server exposes no write tool. Twin
+  reads over MCP and writes beside it, which is stated wherever a round trip is claimed —
+  see *What the MCP server does not expose*.
 - **The public evidence trail is thin.** Both GitHub Actions workflows are disabled because
   Actions are unavailable on this account, so the record is a host cron and the commits it
   produces. `examples/` holds the history files and nothing else yet: no committed
