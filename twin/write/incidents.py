@@ -156,17 +156,41 @@ def _audit(when: int) -> object:
 
 
 _INCIDENTS_ON_ASSET = """
-query($urn: String!) {
+query($urn: String!, $count: Int!) {
   dataset(urn: $urn) {
-    incidents(start: 0, count: 100) {
+    incidents(start: 0, count: $count) {
+      total
       incidents { urn status { state } }
     }
   }
 }
 """
 
+# Incident URNs are deterministic per (scenario, asset), so an asset can carry at most one
+# incident per scenario file. A page this size cannot truncate in practice, and the sweep
+# reports it if it ever does rather than quietly returning a short list.
+_PAGE = 200
 
-def raised_on(catalog: Catalog, entity_urns: tuple[str, ...]) -> tuple[str, ...]:
+
+@dataclass(frozen=True)
+class IncidentSweep:
+    """What a sweep for Twin's incidents found, and what it could not see.
+
+    ``unreachable`` and ``truncated`` exist so that "nothing to resolve" cannot be confused
+    with "could not tell". An unwrite that reported zero incidents because every query failed
+    would be claiming a clean catalog it never checked.
+    """
+
+    found: tuple[str, ...]
+    unreachable: tuple[str, ...]
+    truncated: tuple[str, ...]
+
+    @property
+    def is_complete(self) -> bool:
+        return not self.unreachable and not self.truncated
+
+
+def raised_on(catalog: Catalog, entity_urns: tuple[str, ...]) -> IncidentSweep:
     """Twin's incidents, read back from the assets they were raised against.
 
     Incidents are not top-level entities in DataHub's GraphQL: ``entity(urn:)`` returns null
@@ -181,22 +205,41 @@ def raised_on(catalog: Catalog, entity_urns: tuple[str, ...]) -> tuple[str, ...]
     actually there instead of being told what to expect.
     """
     found: list[str] = []
+    unreachable: list[str] = []
+    truncated: list[str] = []
+
     for urn in entity_urns:
         try:
-            payload = catalog.graph.execute_graphql(_INCIDENTS_ON_ASSET, {"urn": urn})
-        except Exception:  # noqa: BLE001 — an asset with no incidents must not fail the sweep
+            payload = catalog.graph.execute_graphql(
+                _INCIDENTS_ON_ASSET, {"urn": urn, "count": _PAGE}
+            )
+        except Exception:  # noqa: BLE001 — one unreadable asset must not abort the sweep
+            # Recorded rather than skipped. A caller that cannot see an asset has not
+            # established that the asset is clean.
+            unreachable.append(urn)
             continue
+
         dataset = (payload or {}).get("dataset") or {}
-        for incident in ((dataset.get("incidents") or {}).get("incidents") or []):
+        block = dataset.get("incidents") or {}
+        listed = block.get("incidents") or []
+        if (block.get("total") or 0) > len(listed):
+            truncated.append(urn)
+        for incident in listed:
             if str(incident.get("urn", "")).startswith(URN_PREFIX):
                 found.append(str(incident["urn"]))
-    return tuple(sorted(set(found)))
+
+    return IncidentSweep(
+        found=tuple(sorted(set(found))),
+        unreachable=tuple(unreachable),
+        truncated=tuple(truncated),
+    )
 
 
 __all__ = [
     "RaisedIncident",
     "URN_PREFIX",
     "incident_urn",
+    "IncidentSweep",
     "raise_for",
     "raised_on",
     "resolve_all",

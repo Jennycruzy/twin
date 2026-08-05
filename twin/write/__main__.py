@@ -167,8 +167,12 @@ def _prove(graph: EstateGraph, limit: int) -> int:
     return 0
 
 
-def _twin_incidents(catalog: Catalog, graph: EstateGraph) -> tuple[str, ...]:
-    """Every incident Twin raised, read back from the assets it raised them against."""
+def _twin_incidents(catalog: Catalog, graph: EstateGraph):
+    """Every incident Twin raised, read back from the assets it raised them against.
+
+    One URN per asset is enough: an incident is attached to every sibling the asset folds, so
+    either resolves it. Verified against the live catalog rather than assumed.
+    """
     urns = tuple(u for a in graph.of_kind(KIND_DATASET) for u in _dataset_urns(graph, a.key)[:1])
     return raised_on(catalog, urns)
 
@@ -206,10 +210,18 @@ def _unwrite(graph: EstateGraph, purge: bool) -> int:
     urns = [urn for a in graph.of_kind(KIND_DATASET) for urn in _dataset_urns(graph, a.key)]
     catalog = Catalog.connect()
     cleared, deleted = catalog.unwrite(tuple(urns), purge=purge)
-    resolved = resolve_all(catalog, _twin_incidents(catalog, graph))
+    sweep = _twin_incidents(catalog, graph)
+    resolved = resolve_all(catalog, sweep.found)
     print(f"\n  cleared Twin's values from {cleared} assets")
     if resolved:
         print(f"  resolved {resolved} incidents Twin raised (resolved, not deleted)")
+    if not sweep.is_complete:
+        # Said out loud. "No incidents found" and "could not look" must not print the same.
+        print(
+            f"  WARNING: {len(sweep.unreachable)} asset(s) could not be read and "
+            f"{len(sweep.truncated)} returned more incidents than were listed."
+        )
+        print("           Some of Twin's incidents may still be active. Re-run to retry.")
     if purge:
         print(f"  deleted {deleted} property definitions")
         print("  note: DataHub will not let these names be defined again on this stack.")

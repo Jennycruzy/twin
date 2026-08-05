@@ -144,8 +144,9 @@ def test_resolution_finds_twins_incidents_on_the_asset():
             }
         }
     )
-    found = raised_on(catalog, ("urn:li:dataset:(x,y,PROD)",))
-    assert found == (incident_urn("fx", "marts.a"),)
+    sweep = raised_on(catalog, ("urn:li:dataset:(x,y,PROD)",))
+    assert sweep.found == (incident_urn("fx", "marts.a"),)
+    assert sweep.is_complete
 
 
 def test_resolution_never_touches_an_incident_twin_did_not_raise():
@@ -153,10 +154,37 @@ def test_resolution_never_touches_an_incident_twin_did_not_raise():
     catalog.graph = FakeGraph(
         {"dataset": {"incidents": {"incidents": [{"urn": "urn:li:incident:abc"}]}}}
     )
-    assert raised_on(catalog, ("urn:li:dataset:(x,y,PROD)",)) == ()
+    assert raised_on(catalog, ("urn:li:dataset:(x,y,PROD)",)).found == ()
 
 
 def test_an_asset_with_no_incidents_does_not_break_the_sweep():
     catalog = FakeCatalog()
     catalog.graph = FakeGraph({"dataset": None})
-    assert raised_on(catalog, ("urn:li:dataset:(x,y,PROD)",)) == ()
+    sweep = raised_on(catalog, ("urn:li:dataset:(x,y,PROD)",))
+    assert sweep.found == ()
+    assert sweep.is_complete
+
+
+class FailingGraph:
+    def execute_graphql(self, query, variables):
+        raise RuntimeError("GMS is down")
+
+
+def test_an_unreadable_asset_is_reported_not_treated_as_clean():
+    """The distinction that matters: nothing found, versus could not look."""
+    catalog = FakeCatalog()
+    catalog.graph = FailingGraph()
+    sweep = raised_on(catalog, ("urn:li:dataset:(x,y,PROD)",))
+    assert sweep.found == ()
+    assert sweep.unreachable == ("urn:li:dataset:(x,y,PROD)",)
+    assert not sweep.is_complete
+
+
+def test_a_truncated_page_is_reported_rather_than_silently_short():
+    catalog = FakeCatalog()
+    catalog.graph = FakeGraph(
+        {"dataset": {"incidents": {"total": 900, "incidents": [{"urn": "urn:li:incident:a"}]}}}
+    )
+    sweep = raised_on(catalog, ("urn:li:dataset:(x,y,PROD)",))
+    assert sweep.truncated == ("urn:li:dataset:(x,y,PROD)",)
+    assert not sweep.is_complete
