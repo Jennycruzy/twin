@@ -2,15 +2,20 @@
 
 **Twin is chaos engineering for data platforms.** It reads DataHub's context graph,
 simulates failures across it, executes those failures for real against a live warehouse to
-verify its own predictions, and writes fragility scores back into DataHub so every other
-agent inherits a dimension the catalog didn't have before.
+verify its own predictions, and ranks the estate by what it found.
+
+Writing those scores back into DataHub — so every other agent inherits a dimension the
+catalog didn't have before — is the point of the project and is the one milestone still
+unbuilt. It is M6 in the table below, and this README does not describe it in the present
+tense until it exists.
 
 ---
 
 ## Build status
 
 Twin is being built in milestones, and this README describes only what is actually in the
-repository. Nothing below is aspirational.
+repository. Where something is planned rather than built it is labelled as planned, in the
+same sentence, and never in the present tense.
 
 | Milestone | Scope | State |
 |---|---|---|
@@ -136,7 +141,7 @@ honest about what that interface actually exposes. Where the interface is thin, 
 says so instead of quietly reaching around it.
 
 ```
-make read     # read the estate over MCP and cache the graph  (~2 minutes)
+make read     # read the estate over MCP and cache the graph  (~12 minutes, see below)
 make graph    # print the cached graph without touching DataHub
 ```
 
@@ -197,9 +202,12 @@ Recorded here rather than worked around, because the gaps shape what later stage
 
 - **No usage statistics.** DataHub holds the estate's real query counts, and no MCP tool
   returns them. `get_dataset_queries` reads Query entities, which is a different thing.
-  Usage-weighted scoring in Stage 3 therefore needs a decision that is not yet made, and
-  the options — emit Query entities during ingestion, or read usage through the SDK and
-  label it as a documented exception — will be recorded here once one is taken.
+  Usage-weighted scoring in Stage 3 needed a decision about this, and the decision taken was
+  to read usage through the SDK and label it as a documented exception rather than drop the
+  component or invent counts. `twin/score/usage.py` is the only module in the pipeline that
+  does not read over MCP, it says so in its first paragraph, and it is the only thing that
+  changes if DataHub later exposes usage over MCP. Everything else — structure, lineage,
+  ownership, operational metadata — comes over MCP.
 - **Column-to-column lineage is not returned; it has to be interrogated.** Asking which
   assets consume a column answers with the downstream *datasets*, not the downstream fields.
   The landing column is obtainable, but only by asking `get_lineage_paths_between` whether a
@@ -234,8 +242,17 @@ Two paths write to the same append-only file, `examples/history/nightly.jsonl`:
 
 Either way a line is written only when a read genuinely succeeded, and the estate is
 verified before the read, so a broken estate produces no history rather than a line
-asserting something nobody checked. The record widens as stages land — fragility scores join
-it when Stage 3 exists — but it stays append-only.
+asserting something nobody checked. The record widens as stages land — Stage 3 now appends
+to `examples/history/fragility.jsonl` alongside it — but it stays append-only.
+
+Which is why the two lines in `nightly.jsonl` today report 251 column edges and fingerprint
+`1ab1aaacad9403ce`, against the 322 and `2b0ff33cd937f51f` shown above. They were read at
+09:30 and 10:20 on 2026-08-05, before `03d001f` followed damage past the first hop and
+`6ca2842` reverted a column-pair narrowing that was losing edges. The history is append-only,
+so it records what was true when it ran rather than being rewritten to agree with the
+current README — but nothing in the file itself says that, which is a real gap. Those records
+carry no commit SHA, and until they do, a reader has to be told this rather than being able
+to check it.
 
 ## Stage 2: five failure modes, not five faults
 
@@ -470,8 +487,11 @@ of altering a real estate table whatever statement it is handed.
 
 The code layer: an execution boundary that every statement passes through, which refuses any
 destructive statement naming anything outside *this run's* `twin_shadow_` schema — including
-another run's shadow schema. `tests/test_execution_guard.py` shows exactly what it refuses,
-starting with `DROP TABLE marts.mart_revenue_daily`.
+another run's shadow schema — and runs everything it routes read-only inside a `BEGIN READ
+ONLY` transaction, so a write nested inside a `WITH` query or an `EXPLAIN ANALYZE` is refused
+by PostgreSQL rather than by a pattern match. `tests/test_execution_guard.py` shows exactly
+what it refuses, starting with `DROP TABLE marts.mart_revenue_daily`. See *Safety* below for
+what that layer got wrong first.
 
 ## Architecture
 
@@ -492,11 +512,19 @@ Five stages, two feedback loops, three entry points.
                     └────────────────────────────────────────────────────┘
                        outer loop: nightly snapshots become the trend
 
-   Three entry points, one engine:
-     make nightly            scheduled — full pipeline, writes back, opens incidents
+   Entry points that exist today:
      make run SCENARIO=...   one scenario — stages 1-4, report to stdout
+     make scenarios          all five, each graded
+     make score              stage 3 — rank the estate by fragility
+
+   Planned, and deliberately not in the Makefile until they work:
+     make nightly            scheduled — full pipeline, writes back, opens incidents
      make gate               CI — stages 1-3 on changed assets, non-zero if it worsens
 ```
+
+The nightly job that runs today is `ops/nightly-read.sh` and
+`.github/workflows/twin-nightly.yml`, described under *The nightly read*. They verify, read
+and score; they do not write back, because there is nothing to write back with yet.
 
 Twin has no chat interface and will not be getting one. It is invoked by a scheduler, a
 scenario file, or a CI trigger.
@@ -507,14 +535,29 @@ Twin executes destructive operations — that is the point of Stage 4 — so the
 structural rather than conventional. The warehouse role model is already in place and is
 described in full in [docs/SAFETY.md](docs/SAFETY.md). The short version:
 
-Estate objects are owned by the `twin` role. Stage 4 will execute as `twin_shadow`, which
-owns nothing in the estate. In PostgreSQL, `DROP TABLE` and `ALTER TABLE` require object
+Estate objects are owned by the `twin` role. Stage 4 executes as `twin_shadow`, which owns
+nothing in the estate. In PostgreSQL, `DROP TABLE` and `ALTER TABLE` require object
 ownership and ownership cannot be assumed at will, so `twin_shadow` is structurally
 incapable of dropping or altering a real estate table whatever statement it is handed. It
 can only destroy what it created, inside schemas it created.
 
-The execution-boundary guard that refuses any destructive statement naming an object
-outside a `twin_shadow_` prefix belongs to Stage 4 and is not built yet.
+The execution boundary in `twin/verify/guard.py` is the second layer. Every statement Twin
+sends passes through it, and it refuses any destructive statement naming an object outside
+*this run's* `twin_shadow_` schema — including another run's shadow schema, which the role
+model does not cover because `twin_shadow` owns every schema it creates.
+
+That second layer was wrong until `f9e27f0`, and the correction is worth stating rather than
+quietly shipping. It classified statements by their leading keyword, so `WITH` and `EXPLAIN`
+were treated as read-only and returned unchecked — but PostgreSQL allows `DELETE` inside a
+`WITH` query and `EXPLAIN ANALYZE` executes what it explains, and both forms modified data
+after passing the guard. Statements routed read-only now execute inside a `BEGIN READ ONLY`
+transaction, so the guarantee is enforced by the server at any nesting depth instead of by a
+regex. `tests/test_execution_guard.py` shows what the boundary refuses, starting with
+`DROP TABLE marts.mart_revenue_daily`, and what the server now contains.
+
+Note that dbt's connection does not pass through the guard at all — it opens its own from
+`estate/dbt/profiles.yml`, so most of the SQL a scenario causes to run is constrained by the
+role model alone. [docs/SAFETY.md](docs/SAFETY.md) has the full account.
 
 ## Running it
 
@@ -598,7 +641,14 @@ Honest and specific, and this list will grow rather than shrink as stages land.
   variation on the five.
 - **Verification grades what broke, not when.** The predicted timeline's ordering is not
   checked by shadow execution. See *What is and is not being claimed*.
-- **Stages 3 and 5 do not exist yet.** See the build status table.
+- **Stage 5 does not exist yet.** Twin reads DataHub, scores against it and grades itself,
+  but writes nothing back, so the fragility dimension lives in this repository rather than in
+  the catalog. That is the largest gap between what Twin is and what it is for. See the build
+  status table.
+- **The public evidence trail is thin.** Both GitHub Actions workflows are disabled because
+  Actions are unavailable on this account, so the record is a host cron and the commits it
+  produces. `examples/` holds the history files and nothing else yet: no committed
+  verification reports, no incidents, no repair PRs.
 
 ## License
 
