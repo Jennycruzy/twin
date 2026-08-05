@@ -119,6 +119,13 @@ dry-run: ## Print every statement a scenario would execute, without executing an
 	@$(SAY) "Dry run of $(SCENARIO)."
 	@$(RUN) python -m twin.run $(SCENARIO) --dry-run
 
+.PHONY: scenarios
+scenarios: ## Run every scenario in scenarios/ and grade each one
+	@$(SAY) "Running every scenario."
+	@for scenario in scenarios/*.yml; do \
+		$(RUN) python -m twin.run $$scenario || exit 1; \
+	done
+
 # ------------------------------------------------------------------ tests
 
 .PHONY: test

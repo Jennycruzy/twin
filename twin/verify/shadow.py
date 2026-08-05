@@ -41,8 +41,9 @@ from typing import Iterator
 
 from twin.read.model import KIND_DATASET, EstateGraph
 from twin.simulate.scenario import Scenario
+from twin.verify.faults import faulted_relation_sql
 from twin.verify.guard import SHADOW_PREFIX
-from twin.verify.warehouse import ShadowConnection, columns_clause, literal, qualified
+from twin.verify.warehouse import ShadowConnection, literal, qualified
 
 # Layers that are landed by ingestion rather than built by dbt. They are sources, not
 # models: dbt reads them where they are, so the shadow estate never needs a copy.
@@ -130,24 +131,20 @@ def _apply_fault(
 ) -> None:
     """Execute the declared fault against the shadow copy.
 
-    The surviving column list comes from the graph Stage 1 read, so a scenario naming a
-    column that does not exist fails here rather than silently producing a copy identical to
-    production and a verification that grades nothing.
+    The column list comes from the graph Stage 1 read, so a scenario naming a column that
+    does not exist fails here rather than silently producing a copy identical to production
+    and a verification that grades nothing.
     """
-    origin = graph.asset(layout.faulted)
-    names = [c.name for c in origin.columns]
-    if layout.dropped_column not in names:
-        raise ValueError(
-            f"{layout.faulted} has no column {layout.dropped_column!r} "
-            f"(columns: {', '.join(names)})"
-        )
-
-    surviving = [name for name in names if name != layout.dropped_column]
-    connection.execute(
-        f"CREATE VIEW {qualified(layout.schema, model_name(layout.faulted))} AS "
-        f"SELECT {columns_clause(surviving)} "
-        f"FROM {qualified(_source_schema(layout.faulted), model_name(layout.faulted))}"
+    statement = faulted_relation_sql(
+        scenario.fault,
+        graph.asset(layout.faulted),
+        layout.schema,
+        _source_schema(layout.faulted),
+        model_name(layout.faulted),
     )
+    # A deleted asset is executed by being absent, so there is nothing to create.
+    if statement is not None:
+        connection.execute(statement)
 
 
 def create_passthrough(connection: ShadowConnection, layout: ShadowEstate, key: str) -> None:

@@ -1,0 +1,28 @@
+# The orders feed stops advancing.
+#
+# The most expensive failure in this file, and the one that looks like nothing. The nightly
+# snapshot keeps landing, every model builds, every dashboard renders, and each of them is
+# three days short. Nothing alarms because nothing is broken.
+#
+# Twin has to predict degradation here rather than breakage. A model that answers "these
+# fourteen assets are down" would be wrong about every one of them, and verification catches
+# that: the rebuild succeeds, so the only evidence is row counts against production.
+
+name: orders_feed_stalls
+title: The orders feed stops advancing
+
+description: |
+  A replication slot falls behind and the orders snapshot stops receiving new rows. The table
+  is present, queryable and stale.
+
+  What makes this worth executing rather than reasoning about: staleness does not propagate
+  the way breakage does. It passes through every downstream model silently, and the assets
+  that suffer most are the ones furthest from the fault — the daily revenue mart that quietly
+  reports a smaller week, not the staging view sitting next to the source.
+
+fault:
+  kind: stop_new_rows
+  asset: staging.stg_orders
+  column: order_date
+  withhold_days: 3
+  at: "05:30"

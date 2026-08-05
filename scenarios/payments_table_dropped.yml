@@ -1,0 +1,25 @@
+# The payments staging model is deleted.
+#
+# The bluntest fault available, and the control case for every other scenario in this
+# directory. There is no column to discriminate on and no ambiguity about what happens: the
+# relation is gone, so everything reading it fails and everything beneath that is never
+# produced.
+#
+# Its value is as a lower bound. If Twin cannot predict this one exactly, nothing subtler in
+# this directory should be believed.
+
+name: payments_table_dropped
+title: The payments staging model is deleted
+
+description: |
+  A model is removed — a rename that missed a reference, a cleanup of something believed
+  unused, a failed deployment that dropped and did not recreate.
+
+  Unlike a column change, this reaches every consumer of the asset rather than the readers of
+  one field, so the prediction comes from table-grain lineage and the answer should be
+  complete. A miss here is a hole in the lineage graph itself.
+
+fault:
+  kind: drop_asset
+  asset: staging.stg_payments
+  at: "05:30"

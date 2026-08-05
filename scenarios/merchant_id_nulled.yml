@@ -1,0 +1,28 @@
+# The merchant identifier stops being populated.
+#
+# A join key that becomes null is the failure that survives every structural check. The
+# column is present, the type is right, the row count is unchanged, and every model builds.
+# What changes is the result: joins on it stop matching and the numbers behind them quietly
+# become wrong.
+#
+# Row counts alone do not always catch this, which is why the estate's dbt tests are part of
+# the evidence. The models carrying not_null and relationship tests on this key are the ones
+# that will say so.
+
+name: merchant_id_nulled
+title: The merchant identifier stops being populated
+
+description: |
+  An upstream change stops populating the merchant key. Nothing about the shape of the data
+  changes — only its meaning.
+
+  This is the scenario that distinguishes a fragility model from a dependency graph. Every
+  asset downstream of the column reads it, but they do not all suffer equally: a mart that
+  groups by merchant loses its grouping entirely, while one that merely carries the column
+  through is untouched in everything anyone looks at.
+
+fault:
+  kind: null_out_column
+  asset: staging.stg_orders
+  column: merchant_id
+  at: "05:30"

@@ -17,7 +17,7 @@ repository. Nothing below is aspirational.
 | **M1** | The demo estate — warehouse, dbt project, DataHub ingestion, verification gate | **Done** |
 | **M2** | Stage 1 — read the estate through the DataHub MCP server | **Done** |
 | **M3** | Stage 4 — shadow execution and self-grading | **Done** |
-| M4 | Stage 2 — propagation engine and failure timelines | Not started |
+| **M4** | Stage 2 — propagation engine and failure timelines | **Done** |
 | M5 | Stage 3 — fragility scoring and the knockout sweep | Not started |
 | M6 | Stage 5 — write-back, incidents, repair PRs | Not started |
 
@@ -224,6 +224,88 @@ verified before the read, so a broken estate produces no history rather than a l
 asserting something nobody checked. The record widens as stages land — fragility scores join
 it when Stage 3 exists — but it stays append-only.
 
+## Stage 2: five failure modes, not five faults
+
+The five scenarios in `scenarios/` are chosen so that each one fails *differently*. Five
+variations on "delete something" would grade well and prove very little.
+
+| Scenario | Fault | Twin must predict | How reality answers |
+|---|---|---|---|
+| `payments_table_dropped` | asset deleted | unavailable | relation missing |
+| `fx_rate_column_drop` | column stops arriving | unavailable | build error |
+| `fx_rate_type_regression` | column arrives as text | unavailable | cast error |
+| `merchant_id_nulled` | join key becomes null | **degraded** | builds, contents differ |
+| `orders_feed_stalls` | rows stop arriving | **degraded** | builds, three days short |
+
+The bottom two are the point of M4. **Unavailable** means the asset is not there — loud,
+alarming, comparatively easy. **Degraded** means it built successfully and is wrong: nothing
+alarms, the dashboard renders, and the number on it is untrue. A model that reports every
+fault as an outage is right about the cheap failures and wrong about the expensive ones, so
+the two are predicted separately and graded separately.
+
+That distinction forces a second observation channel. A dbt exit code cannot see staleness,
+so every rebuilt model is compared against production by row count *and* an order-independent
+checksum over every row. This is not a detail — a revenue mart missing three days of orders
+has exactly the same number of rows as production and understates three days of revenue.
+Row counts alone called that healthy and scored a correct prediction as a false alarm.
+
+```
+make scenarios                    # run all five
+make run SCENARIO=scenarios/orders_feed_stalls.yml
+```
+
+### Results across the five, executed
+
+| Scenario | Isolated probe | Full refresh | Identical to production |
+|---|---|---|---|
+| `payments_table_dropped` | 1.00 / 1.00 | 1.00 / 1.00 (6 unavailable) | 5 |
+| `fx_rate_column_drop` | 1.00 / 1.00 | 1.00 / 1.00 (14 unavailable) | 11 |
+| `fx_rate_type_regression` | 1.00 / 1.00 | 1.00 / 1.00 (14 unavailable) | 11 |
+| `orders_feed_stalls` | 1.00 / 1.00 | 1.00 / 1.00 (15 degraded) | 13 |
+| `merchant_id_nulled` | 1.00 / 1.00 | **0.67** / 1.00 (10 degraded) | 5 |
+
+Precision / recall. The last column is the control: models rebuilt in the same run that came
+out byte-for-byte identical to production. A comparison that reported "different" for
+everything would manufacture perfect scores, and that column is what shows it does not.
+
+**Twin is wrong on `merchant_id_nulled`, and the report names it.** Five assets were
+predicted to be degraded and came out identical to production:
+
+```
+    false alarm  marts.mart_subscription_health               identical to production
+    false alarm  marts.mart_finance_reconciliation            identical to production
+    false alarm  ml.feature_customer_risk                     identical to production
+    ...
+    predicted 15   observed 10   precision 0.67   recall 1.00
+```
+
+The cause is known and stated rather than tuned away. The first wave of a column fault is
+found at column grain, but degradation *after* that first hop propagates at table grain — so
+anything downstream of a degraded asset is predicted degraded, whether or not it reads the
+affected values. Propagating column lineage the whole way down would fix these five, and it
+is the obvious next improvement to the model. It has not been made yet, because making it in
+response to this scenario is how a model gets fitted to its demo.
+
+### Who gets paged
+
+A timeline says what fails. A paging list says what that costs at 05:30.
+
+```
+  WHO GETS PAGED
+  --------------------------------------------------------------------------
+    4 owner(s) paged, heaviest dana.oyelaran@example.com with 15 asset(s), 12 asset(s) page nobody
+
+       +00:00  dana.oyelaran@example.com          15 asset(s), first intermediate.int_orders_enriched
+       +00:00  amara.chen@example.com              6 asset(s), first ml.feature_customer_risk
+       ...
+    pages nobody — 12 asset(s) with no owner
+```
+
+Ordered by when the phone rings rather than by severity, because the owner of the first
+asset to fail is paged first whether or not theirs is the important one. The unowned assets
+are listed rather than dropped: an asset that pages nobody is more dangerous than one that
+does, and a response plan that silently omits them describes an incident nobody attends.
+
 ## Stage 4: executing the failure and grading the prediction
 
 This is the part the project stands on. Twin does not ask you to believe a simulation — it
@@ -365,6 +447,7 @@ credentials, no paid tier.
 | `make read` | Read the estate over MCP and cache the graph |
 | `make graph` | Print the cached graph without touching DataHub |
 | `make run` | Run a scenario through stages 1-4 and grade the prediction |
+| `make scenarios` | Run all five scenarios in turn |
 | `make dry-run` | Print every statement a scenario would execute, execute none |
 | `make test` | Run the test suite |
 | `make down` | Stop everything and remove the volumes |
@@ -406,13 +489,18 @@ Honest and specific, and this list will grow rather than shrink as stages land.
 - **Stage 1 sees only what MCP exposes.** Usage statistics, column-to-column lineage and
   the ML deployment are not reachable through the interface Twin reads from — see *What the
   MCP server does not expose*. Everything Twin scores is built from what is listed there.
-- **One fault kind is executable.** `drop_column` runs end to end. Revoking access, halting a
-  refresh and deleting an asset are declared unexecutable by the scenario loader rather than
-  silently accepted, because a fault Twin cannot run produces a prediction nothing can grade.
+- **Five fault kinds are executable**, and only those five. A fault the execution layer
+  cannot run is refused by the scenario loader rather than silently accepted, because it
+  would produce a prediction nothing can grade. Revoking access is the notable absence: Stage
+  4 executes as the owner of everything it creates, so it cannot revoke its own privileges
+  convincingly, and a simulated permission error would be exactly the kind of pretend
+  evidence this project exists to avoid.
+- **Degradation propagates at table grain after the first hop.** This over-predicts, and
+  `merchant_id_nulled` shows it costing five false alarms and 0.33 of precision. Named above
+  rather than tuned away.
 - **Verification grades what broke, not when.** The predicted timeline's ordering is not
   checked by shadow execution. See *What is and is not being claimed*.
-- **Stages 2, 3 and 5 are partial or absent.** Stage 2 exists only as the propagation needed
-  to feed verification — one fault kind, one scenario. See the build status table.
+- **Stages 3 and 5 do not exist yet.** See the build status table.
 
 ## License
 

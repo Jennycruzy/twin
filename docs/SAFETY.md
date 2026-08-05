@@ -16,8 +16,9 @@ Inside a schema named `twin_shadow_<scenario>`, and nowhere else:
 
 - `CREATE SCHEMA twin_shadow_<scenario>`, and a view onto the real relation for every estate
   model, so the shadow estate stands up in seconds without copying any data
-- the fault the scenario declares — today, dropping a column, which means recreating the
-  affected asset in the shadow schema without it
+- the fault the scenario declares, expressed as the shadow copy of the affected asset: a
+  relation genuinely missing a column, genuinely holding the wrong type, genuinely filled
+  with nulls, genuinely short of recent rows, or genuinely absent
 - real dbt builds of the downstream models against that shadow schema, as `twin_shadow`
 - the real dashboard-backing queries from `estate/ingest/queries/`, re-pointed at the
   shadow schema
@@ -27,9 +28,10 @@ Inside a schema named `twin_shadow_<scenario>`, and nowhere else:
 Every one of those statements passes the execution boundary described below before it is
 sent. `make dry-run` prints the complete list for a scenario and executes none of it.
 
-Fault kinds that are not yet built — revoking access, halting a refresh, deleting an asset —
-are rejected by the scenario loader rather than silently accepted, because a fault the
-execution layer cannot run would produce a prediction nothing could grade.
+Fault kinds the execution layer cannot run — revoking access is the notable one, because
+Stage 4 owns everything it creates and cannot convincingly revoke its own privileges — are
+rejected by the scenario loader rather than silently accepted. A fault Twin cannot execute
+would produce a prediction nothing could grade.
 
 ## The three roles
 

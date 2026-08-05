@@ -27,8 +27,9 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass
 
+from twin.faults import cascade_impact
 from twin.read.model import KIND_DATASET, EstateGraph
-from twin.simulate.scenario import DROP_COLUMN, Scenario
+from twin.simulate.scenario import Scenario
 
 # The clock the timeline is expressed against. Offsets from the fault are what get printed,
 # so the anchor date never appears anywhere and cannot be mistaken for a real one.
@@ -45,10 +46,11 @@ _CONTINUOUS_LAG = dt.timedelta(minutes=5)
 
 @dataclass(frozen=True, order=True)
 class Event:
-    """One asset breaking, at an offset from the fault."""
+    """One asset failing, at an offset from the fault, in a particular way."""
 
     at: dt.timedelta
     key: str
+    impact: str
     reason: str
 
     def offset(self) -> str:
@@ -80,8 +82,16 @@ class Timeline:
 
     @property
     def broken(self) -> tuple[str, ...]:
-        """Every asset predicted to break, excluding the asset the fault was applied to."""
+        """Every asset predicted to fail, excluding the asset the fault was applied to."""
         return tuple(sorted({e.key for e in self.events}))
+
+    def with_impact(self, impact: str) -> tuple[str, ...]:
+        """Assets predicted to fail in one particular way.
+
+        Graded separately from the total, because predicting that something breaks when it
+        actually goes quietly wrong is a real error that a combined count would hide.
+        """
+        return tuple(sorted({e.key for e in self.events if e.impact == impact}))
 
     def event_for(self, key: str) -> Event | None:
         return next((e for e in self.events if e.key == key), None)
@@ -122,53 +132,70 @@ def _breaks_on_read(graph: EstateGraph, key: str) -> bool:
     return (asset.materialization or "").lower() == "view"
 
 
+def _first_wave(graph: EstateGraph, scenario: Scenario) -> tuple[dict[str, str], str]:
+    """The assets the fault reaches directly, and how each of them is described.
+
+    A column-grained fault reaches only the readers of that column, which is the claim
+    column-level lineage exists to make. A table-grained one — the asset is deleted, the
+    asset stops updating — reaches everything that reads the asset at all, because there is
+    no column to discriminate on.
+    """
+    origin = scenario.fault.asset
+    definition = scenario.fault.definition
+
+    if definition.is_column_grained:
+        column = scenario.fault.column or ""
+        targets = {edge.target for edge in graph.columns_consuming(origin, column)}
+        return {key: f"reads {origin}.{column}" for key in targets}, definition.impact
+
+    return {key: f"reads {origin}" for key in graph.downstream(origin)}, definition.impact
+
+
 def predict(graph: EstateGraph, scenario: Scenario) -> Timeline:
     """Propagate the scenario's fault across the graph."""
     origin = scenario.fault.asset
     if not graph.has(origin):
         raise KeyError(f"{origin} is not in the estate graph")
-    if scenario.fault.kind != DROP_COLUMN:
-        raise NotImplementedError(f"no propagation model for {scenario.fault.kind}")
 
     fault_at = _EPOCH.replace(hour=scenario.fault.at.hour, minute=scenario.fault.at.minute)
+    wave, impact = _first_wave(graph, scenario)
 
-    # The fault reaches only the assets that read the dropped column. Everything else
-    # downstream of the origin is untouched, which is the whole reason to read column
-    # lineage — and the reason a wrong column here produces a visibly wrong prediction.
-    column = scenario.fault.column or ""
-    first_wave = {edge.target for edge in graph.columns_consuming(origin, column)}
-
-    broken_at: dict[str, dt.datetime] = {}
+    failed_at: dict[str, dt.datetime] = {}
     reasons: dict[str, str] = {}
-    frontier: list[tuple[str, dt.datetime, str]] = [
-        (key, fault_at, f"reads {origin}.{column}") for key in sorted(first_wave)
+    impacts: dict[str, str] = {}
+    frontier: list[tuple[str, dt.datetime, str, str]] = [
+        (key, fault_at, reason, impact) for key, reason in sorted(wave.items())
     ]
 
     while frontier:
         frontier.sort(key=lambda item: (item[1], item[0]))
-        key, upstream_broke_at, reason = frontier.pop(0)
+        key, upstream_failed_at, reason, upstream_impact = frontier.pop(0)
         if key == origin or not graph.has(key):
             continue
 
         when = (
-            upstream_broke_at
+            upstream_failed_at
             if _breaks_on_read(graph, key)
-            else _next_refresh(graph.asset(key).refresh_cadence, upstream_broke_at)
+            else _next_refresh(graph.asset(key).refresh_cadence, upstream_failed_at)
         )
-        if key in broken_at and broken_at[key] <= when:
+        if key in failed_at and failed_at[key] <= when:
             continue
 
-        broken_at[key] = when
+        failed_at[key] = when
         reasons[key] = reason
+        impacts[key] = upstream_impact
         for downstream in graph.downstream(key):
-            frontier.append((downstream, when, f"reads {key}"))
+            frontier.append((downstream, when, f"reads {key}", cascade_impact(upstream_impact)))
 
     events = tuple(
-        sorted(Event(at=when - fault_at, key=key, reason=reasons[key]) for key, when in broken_at.items())
+        sorted(
+            Event(at=when - fault_at, key=key, impact=impacts[key], reason=reasons[key])
+            for key, when in failed_at.items()
+        )
     )
     return Timeline(
         scenario=scenario.name,
         origin=origin,
         events=events,
-        direct=tuple(sorted(first_wave)),
+        direct=tuple(sorted(wave)),
     )

@@ -19,15 +19,17 @@ from typing import Any
 
 import yaml
 
+from twin.faults import KINDS, FaultKind, kind as fault_kind
+
 # A scenario's name becomes part of the shadow schema it executes in, so it is restricted to
 # characters that are an identifier in PostgreSQL without quoting or escaping. Validating it
 # here means the execution layer never has to reason about a hostile name.
 _NAME = re.compile(r"^[a-z][a-z0-9_]{2,48}$")
 
-# Fault kinds Stage 4 can execute. The list grows with the execution layer, never ahead of
-# it: a scenario Twin cannot run is a scenario Twin cannot check itself against.
+# How much recent data a staleness fault withholds, when the scenario does not say.
+_DEFAULT_WITHHOLD_DAYS = 3
+
 DROP_COLUMN = "drop_column"
-KNOWN_FAULTS = (DROP_COLUMN,)
 
 _DEFAULT_FAULT_TIME = "04:12"
 
@@ -44,11 +46,17 @@ class Fault:
     asset: str
     column: str | None
     at: dt.time
+    withhold_days: int = _DEFAULT_WITHHOLD_DAYS
+
+    @property
+    def definition(self) -> FaultKind:
+        return fault_kind(self.kind)
 
     def describe(self) -> str:
-        if self.kind == DROP_COLUMN:
-            return f"column {self.asset}.{self.column} is dropped"
-        return f"{self.kind} on {self.asset}"
+        target = f"{self.asset}.{self.column}" if self.column else self.asset
+        if self.kind == "stop_new_rows":
+            return f"{self.asset} stops receiving rows for {self.withhold_days} days"
+        return f"{target}: {self.definition.summary}"
 
 
 @dataclass(frozen=True)
@@ -88,15 +96,18 @@ def load_scenario(path: Path) -> Scenario:
         raise ScenarioError(f"{path}: fault must be a mapping")
 
     kind = _require(fault_payload, "kind", f"{path}: fault")
-    if kind not in KNOWN_FAULTS:
+    if kind not in KINDS:
         raise ScenarioError(
             f"{path}: fault kind {kind!r} cannot be executed. "
-            f"Stage 4 knows how to run: {', '.join(KNOWN_FAULTS)}"
+            f"Stage 4 knows how to run: {', '.join(sorted(KINDS))}"
         )
 
+    definition = fault_kind(str(kind))
     column = fault_payload.get("column")
-    if kind == DROP_COLUMN and not column:
-        raise ScenarioError(f"{path}: a {DROP_COLUMN} fault must name a column")
+    if definition.needs_column and not column:
+        raise ScenarioError(
+            f"{path}: a {kind} fault must name {definition.column_role}"
+        )
 
     name = str(_require(payload, "name", str(path)))
     if not _NAME.match(name):
@@ -114,6 +125,7 @@ def load_scenario(path: Path) -> Scenario:
             asset=str(_require(fault_payload, "asset", f"{path}: fault")),
             column=str(column) if column else None,
             at=_parse_time(fault_payload.get("at", _DEFAULT_FAULT_TIME)),
+            withhold_days=int(fault_payload.get("withhold_days", _DEFAULT_WITHHOLD_DAYS)),
         ),
         path=path,
     )

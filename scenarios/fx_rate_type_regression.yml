@@ -1,0 +1,27 @@
+# The FX rate arrives as text.
+#
+# An upstream feed loses its schema and every value arrives as a string. This is the scenario
+# Twin is most likely to get wrong, which is why it is here.
+#
+# Column lineage says which models read the column. It cannot say what they do with it. A
+# model that multiplies by the rate will fail on a text value; a model that only passes it
+# through will build without complaint. Both look identical in the graph, so any prediction
+# made from lineage alone must produce false alarms here — and shadow execution will name
+# them.
+
+name: fx_rate_type_regression
+title: The FX rate arrives as text
+
+description: |
+  The currency feed regresses to untyped output and the rate column becomes text. Nothing is
+  missing and nothing is null; the values are all there, in the wrong type.
+
+  The interesting question is which downstream models actually care. PostgreSQL will refuse
+  arithmetic on text but is perfectly happy to select it, join on it and store it, so the
+  blast radius depends on what each model does rather than on what it reads.
+
+fault:
+  kind: change_column_type
+  asset: staging.stg_fx_rates
+  column: rate
+  at: "04:12"

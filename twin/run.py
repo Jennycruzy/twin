@@ -16,14 +16,17 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
+from twin.faults import DEGRADED, UNAVAILABLE
 from twin.read import read_estate
 from twin.read.cache import load_latest, store
 from twin.read.model import EstateGraph
 from twin.simulate import Scenario, ScenarioError, Timeline, load_scenario, predict
+from twin.simulate.paging import build as build_paging, describe_load
 from twin.verify.consumers import ConsumerCheck, run_consumer_queries
 from twin.verify.dbt_runner import BuildOutcome, probe_model, rebuild_downstream
 from twin.verify.grade import Scorecard, grade
 from twin.verify.guard import UnsafeStatement
+from twin.verify.observe import AssetObservation, affected, classify, with_impact
 from twin.verify.shadow import (
     ShadowEstate,
     create_passthrough,
@@ -38,6 +41,11 @@ WORKLOAD = Path("estate/ingest/queries/workload.yml")
 SHADOW_ARTIFACTS = Path("/tmp/twin-shadow")
 
 _RULE = "  " + "-" * 74
+
+_IMPACT_QUESTION = {
+    UNAVAILABLE: "which assets could not be produced at all",
+    DEGRADED: "which assets were produced and are wrong — the quiet failure",
+}
 
 
 def _load_graph(refresh: bool) -> EstateGraph:
@@ -62,21 +70,24 @@ def _probe_each(
     connection: ShadowConnection,
     artifacts: Path,
     dry_run: bool,
-) -> dict[str, str]:
+) -> dict[str, AssetObservation]:
     """Build each downstream model on its own against the faulted asset.
 
-    Returns the models that failed, with the warehouse's error. A model is restored to a
-    passthrough afterwards whatever happened, so no probe can contaminate the next one.
+    Everything the model reads is healthy except the faulted asset, so whatever happens to it
+    happens because of the fault. Each result is classified the same way the cascade is —
+    missing, or present and different from production — because a fault that degrades rather
+    than breaks would otherwise look like a clean build.
+
+    A model is restored to a passthrough afterwards whatever happened, so one probe cannot
+    contaminate the next.
     """
-    failures: dict[str, str] = {}
+    observations: dict[str, AssetObservation] = {}
     for key in layout.to_rebuild:
         outcome = probe_model(graph, layout, DBT_PROJECT, artifacts, key, dry_run=dry_run)
-        failure = outcome.failure_for(key)
-        if failure is not None:
-            failures[key] = failure.message or failure.status
         if not dry_run:
+            observations.update(classify(connection, layout, outcome, (key,)))
             create_passthrough(connection, layout, key)
-    return failures
+    return observations
 
 
 def _print_header(scenario: Scenario, graph: EstateGraph) -> None:
@@ -113,7 +124,10 @@ def _print_execution(layout: ShadowEstate, build: BuildOutcome, statements: int)
 
 
 def _print_scorecard(
-    title: str, question: str, card: Scorecard, detail: dict[str, str]
+    title: str,
+    question: str,
+    card: Scorecard,
+    observations: dict[str, AssetObservation],
 ) -> None:
     print()
     print(f"  {title}")
@@ -122,12 +136,13 @@ def _print_scorecard(
     print(f"    scope: {len(card.scope)} models")
     print()
 
+    detail = {k: o.detail for k, o in observations.items()}
     for key in card.hits:
         print(f"    hit          {key:<44} {detail.get(key, '')[:58]}")
     for key in card.misses:
         print(f"    MISS         {key:<44} {detail.get(key, '')[:58]}")
     for key in card.false_alarms:
-        print(f"    false alarm  {key:<44} built cleanly")
+        print(f"    false alarm  {key:<44} {detail.get(key, 'built cleanly')[:58]}")
 
     precision = f"{card.precision:.2f}" if card.precision is not None else "n/a"
     recall = f"{card.recall:.2f}" if card.recall is not None else "n/a"
@@ -136,9 +151,13 @@ def _print_scorecard(
         f"    predicted {len(card.predicted)}   observed {len(card.observed)}   "
         f"precision {precision}   recall {recall}"
     )
-    survived = len(card.scope) - len(card.observed)
-    if survived:
-        print(f"    {survived} model(s) in scope did not break — each one a chance to raise a false alarm")
+    # The control statistic. Every comparison here is against production, so a check that
+    # reported "different" for everything would manufacture perfect scores. This is the count
+    # that shows it does not: models rebuilt during the same run that came out byte-for-byte
+    # identical to production, each of which was an opportunity to raise a false alarm.
+    identical = sum(1 for key in card.scope if observations.get(key) and not observations[key].affected)
+    if identical:
+        print(f"    {identical} model(s) in scope came out identical to production")
     if card.misses:
         print(f"    {len(card.misses)} miss(es) named above — broke without being predicted")
     if card.is_suspiciously_perfect:
@@ -158,6 +177,25 @@ def _print_ungraded(card: Scorecard, graph: EstateGraph) -> None:
         kinds[kind] = kinds.get(kind, 0) + 1
     for kind, count in sorted(kinds.items()):
         print(f"    {kind:<20} {count}")
+
+
+def _print_paging(graph: EstateGraph, timeline: Timeline) -> None:
+    paging = build_paging(graph, timeline)
+    print()
+    print("  WHO GETS PAGED")
+    print(_RULE)
+    print(f"    {describe_load(paging)}")
+    print()
+    for page in paging.pages:
+        print(
+            f"    {page.at:>9}  {page.owner:<34} {page.count:>2} asset(s), first "
+            f"{page.first_asset}"
+        )
+    if paging.unowned:
+        print()
+        print(f"    pages nobody — {len(paging.unowned)} asset(s) with no owner:")
+        for key in paging.unowned:
+            print(f"      {key}")
 
 
 def _print_consumers(checks: Iterable[ConsumerCheck]) -> None:
@@ -215,6 +253,11 @@ def main(argv: Iterable[str] | None = None) -> int:
                 build = rebuild_downstream(
                     graph, layout, DBT_PROJECT, artifacts, dry_run=args.dry_run
                 )
+                observed = (
+                    {}
+                    if args.dry_run
+                    else classify(connection, layout, build, layout.to_rebuild)
+                )
                 consumers = run_consumer_queries(connection, layout, WORKLOAD)
     except UnsafeStatement as exc:
         print(f"\n  execution boundary refused a statement: {exc}\n", file=sys.stderr)
@@ -233,27 +276,29 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     _print_execution(layout, build, len(connection.issued))
 
-    direct = grade(timeline.direct, tuple(probes), layout.to_rebuild)
+    expected = scenario.fault.definition.impact
+    direct = grade(timeline.direct, with_impact(probes, expected), layout.to_rebuild)
     _print_scorecard(
-        "DOES IT READ THE DROPPED COLUMN?",
+        f"IS IT {expected.upper()} ON ITS OWN?",
         "each model built alone, everything else healthy — the falsifiable test",
         direct,
         probes,
     )
 
-    cascade_detail = {
-        key: (build.failure_for(key).message or build.failure_for(key).status)
-        for key in build.broken_models
-        if build.failure_for(key)
-    }
-    blast = grade(timeline.broken, build.broken_models, layout.to_rebuild)
-    _print_scorecard(
-        "BLAST RADIUS AFTER A FULL REFRESH",
-        "the whole downstream estate rebuilt at once, as a real refresh would",
-        blast,
-        cascade_detail,
-    )
-    _print_ungraded(blast, graph)
+    for impact in (UNAVAILABLE, DEGRADED):
+        predicted = timeline.with_impact(impact)
+        seen = with_impact(observed, impact)
+        if not predicted and not seen:
+            continue
+        _print_scorecard(
+            f"AFTER A FULL REFRESH: {impact.upper()}",
+            _IMPACT_QUESTION[impact],
+            grade(predicted, seen, layout.to_rebuild),
+            observed,
+        )
+
+    _print_ungraded(grade(timeline.broken, affected(observed), layout.to_rebuild), graph)
+    _print_paging(graph, timeline)
     _print_consumers(consumers)
     return 0
 
