@@ -20,6 +20,7 @@ import argparse
 import collections
 import os
 import sys
+import time
 from dataclasses import dataclass
 from typing import Iterable
 
@@ -249,9 +250,52 @@ def print_report(
     print()
 
 
+def settle(graph: DataHubGraph, timeout: float, interval: float) -> tuple:
+    """Read the estate repeatedly until the catalog stops changing.
+
+    DataHub indexes asynchronously through OpenSearch, so ingestion returns before the
+    entities it wrote are searchable. Checked immediately after `make estate`, this script
+    reported 41 of 66 dbt siblings and failed — with nothing actually wrong. On a first run
+    that failure is the first thing a reader sees, and it says the estate is broken when it
+    is merely young.
+
+    So the wait is for *stability*, not for success. Polling stops the moment two consecutive
+    reads agree, and the verdict is then whatever those stable numbers say. An estate that is
+    genuinely wrong still fails, and fails immediately, because wrong numbers are stable
+    numbers. Retrying until the checks pass would have been the easier fix and would have
+    made this script incapable of reporting a real problem.
+    """
+    deadline = time.monotonic() + timeout
+    previous: tuple[str, ...] | None = None
+
+    while True:
+        inspector = EstateInspector(graph)
+        result = run_checks(inspector)
+        checks = result[0]
+        observed = tuple(c.observed for c in checks)
+
+        if all(c.passed for c in checks) or observed == previous or time.monotonic() >= deadline:
+            return (inspector, *result)
+
+        passing = sum(1 for c in checks if c.passed)
+        print(
+            f"  waiting for the catalog to settle — {passing}/{len(checks)} checks passing",
+            file=sys.stderr,
+        )
+        previous = observed
+        time.sleep(interval)
+
+
 def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--gms", default=os.environ.get("DATAHUB_GMS_URL", "http://datahub-gms:8080"))
+    parser.add_argument(
+        "--settle-timeout",
+        type=float,
+        default=180.0,
+        help="how long to allow for asynchronous indexing before judging the estate",
+    )
+    parser.add_argument("--settle-interval", type=float, default=10.0)
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     try:
@@ -264,8 +308,9 @@ def main(argv: Iterable[str] | None = None) -> int:
         print("is the stack up? try `make up`.", file=sys.stderr)
         return 2
 
-    inspector = EstateInspector(graph)
-    checks, owners, unowned, downstream, ml_path = run_checks(inspector)
+    inspector, checks, owners, unowned, downstream, ml_path = settle(
+        graph, args.settle_timeout, args.settle_interval
+    )
     print_report(checks, owners, unowned, len(inspector.postgres), downstream, ml_path)
 
     failed = [c for c in checks if not c.passed]

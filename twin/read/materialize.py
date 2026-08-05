@@ -290,12 +290,21 @@ async def _column_edges(
 ) -> list[ColumnEdge]:
     """Column lineage, resolved all the way to the column it lands on.
 
-    Two passes, because the interface answers two different questions. The first asks which
-    datasets consume a column, which is cheap and gives the edges. The second asks, for each
-    of those edges, which column of the consumer the value actually became — one call per
-    candidate pair, which is the expensive part of a read and the reason the graph is cached.
+    Three passes, because the interface answers three different questions and only the last
+    one is expensive.
 
-    Without the second pass, damage can only be followed at column grain for a single hop.
+    The first asks which datasets consume a column, which gives the edges. The second asks
+    each column of each dataset where it comes from, which is one call per column. The third
+    asks whether a specific pair of columns is connected, one call per pair, and this is the
+    part that dominates a read.
+
+    The second pass exists to make the third small. A dependency between two assets does not
+    mean every column of the consumer derives from the producer — most derive from somewhere
+    else entirely, and asking about those pairs spends a round trip to be told something
+    already known. Restricting the pairs to columns whose upstreams actually include the
+    producing asset is exact rather than heuristic: it asks fewer questions, not easier ones.
+
+    Without the third pass, damage can only be followed at column grain for a single hop.
     After that every consumer of a damaged asset looks equally damaged, which over-predicts
     the quiet failures — exactly the ones worth predicting well.
     """
@@ -306,12 +315,22 @@ async def _column_edges(
         if asset.kind == KIND_DATASET
         for column in asset.columns
     ]
-    consumers = await asyncio.gather(
-        *(client.downstreams(urn, column=column) for _, urn, column in probes)
+    consumers, sources = await asyncio.gather(
+        asyncio.gather(*(client.downstreams(urn, column=column) for _, urn, column in probes)),
+        asyncio.gather(*(client.upstreams(urn, column=column) for _, urn, column in probes)),
     )
 
-    # Candidate landings: every column of every consuming asset is a possible destination
-    # until the catalog says otherwise.
+    # Which assets each column draws from, so that a pair can be dismissed without asking.
+    feeds: dict[tuple[str, str], set[str]] = {}
+    for (key, _, column), upstream in zip(probes, sources):
+        feeds[(key, column)] = {
+            resolved
+            for entity in upstream
+            if (resolved := urn_to_key.get(entity.get("urn", "")))
+        }
+
+    # Candidate landings: the columns of the consumer that draw on the producing asset at
+    # all. Everything else cannot be where this value went.
     candidates: list[tuple[str, str, str, str, str, str]] = []
     for (key, source_urn, column), found in zip(probes, consumers):
         for consumer in found:
@@ -320,6 +339,8 @@ async def _column_edges(
                 continue
             target_urn = consumer["urn"]
             for landing in by_key[target].columns:
+                if key not in feeds.get((target, landing.name), set()):
+                    continue
                 candidates.append((key, column, target, landing.name, source_urn, target_urn))
 
     resolved = await asyncio.gather(
