@@ -182,10 +182,14 @@ overstates the damage in exactly the direction that makes a demo look impressive
 
 **The fingerprint is content-addressed.** It hashes the assets, edges, column edges and
 operational metadata, and deliberately excludes when and where the read happened. The same
-platform read twice produces the same fingerprint — verified across runs and across
-concurrency settings — which is what makes the cache safe and what lets a nightly run state
-whether the platform actually changed since yesterday rather than merely that it was read
-again.
+platform read twice produces the same fingerprint, which is what makes the cache safe and
+what lets a nightly run state whether the platform actually changed since yesterday rather
+than merely that it was read again.
+
+That has been checked the hard way. The stack was torn down with its volumes deleted, and
+the whole estate rebuilt from nothing — 1.9M rows regenerated, 39 models rebuilt, everything
+re-ingested and re-read. The fingerprint came back `2b0ff33cd937f51f`, identical to the read
+before the teardown. Determinism here is a measured property rather than an intention.
 
 ### What the MCP server does not expose
 
@@ -222,7 +226,11 @@ Two paths write to the same append-only file, `examples/history/nightly.jsonl`:
 - **`ops/nightly-read.sh`**, run from a host cron at 03:17. Suits a machine where the stack
   is already up — it verifies the estate, reads it over MCP, and commits one line.
 - **`.github/workflows/twin-nightly.yml`**, the same job on a runner that builds the estate
-  from nothing first.
+  from nothing first. Present but currently disabled, along with the test workflow, because
+  Actions are unavailable on this account — every scheduled run failed before starting and
+  left a misleading red mark on a commit that was fine. The host cron is doing the work in
+  the meantime, and the commit trail it produces is the record. Both workflows re-enable with
+  `gh workflow enable` and nothing else.
 
 Either way a line is written only when a read genuinely succeeded, and the estate is
 verified before the read, so a broken estate produces no history rather than a line
@@ -468,10 +476,20 @@ credentials, no paid tier.
 | `make down` | Stop everything and remove the volumes |
 | `make help` | List every target that exists |
 
-Timings on a 4-core VPS: `make up` takes ~3 minutes on first run (image pull), `make estate`
-takes ~3 minutes, `make verify-estate` takes ~20 seconds, `make read` takes ~2 minutes. The
-read is dominated by round trips to GMS rather than by Twin, which is why the graph is
-cached and why raising client concurrency barely moves it.
+Timings on a 4-core VPS, measured from a fresh clone with the volumes wiped rather than on a
+warm machine: `make up` 2m13s, `make estate` 2m08s, `make verify-estate` 36s, `make read`
+10-12 minutes, `make run` about a minute per scenario.
+
+The read is the outlier and the reason the graph is cached. It is dominated by round trips
+to GMS rather than by Twin — resolving which column each dependency lands on is roughly
+four thousand individual questions, each a graph traversal on DataHub's side. Raising client
+concurrency barely moves it. Narrowing the questions does move it, and is wrong: see the
+note in `twin/read/materialize.py` about the edge that disappears.
+
+`make verify-estate` waits for DataHub to finish indexing before judging, because ingestion
+returns before the entities it wrote are searchable. It waits for the numbers to stop
+changing rather than for them to become correct, so a genuinely incomplete estate still
+fails, and fails immediately.
 
 The stack binds host ports outside DataHub's defaults — 19002 for the UI, 18080 for GMS,
 15432 for the warehouse — so it will not collide with anything already running. Every

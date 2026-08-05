@@ -290,23 +290,23 @@ async def _column_edges(
 ) -> list[ColumnEdge]:
     """Column lineage, resolved all the way to the column it lands on.
 
-    Three passes, because the interface answers three different questions and only the last
-    one is expensive.
+    Two passes, because the interface answers two different questions. The first asks which
+    datasets consume a column, which is cheap and gives the edges. The second asks, for each
+    of those edges, which column of the consumer the value actually became — one call per
+    candidate pair, which is the expensive part of a read and the reason the graph is cached.
 
-    The first asks which datasets consume a column, which gives the edges. The second asks
-    each column of each dataset where it comes from, which is one call per column. The third
-    asks whether a specific pair of columns is connected, one call per pair, and this is the
-    part that dominates a read.
-
-    The second pass exists to make the third small. A dependency between two assets does not
-    mean every column of the consumer derives from the producer — most derive from somewhere
-    else entirely, and asking about those pairs spends a round trip to be told something
-    already known. Restricting the pairs to columns whose upstreams actually include the
-    producing asset is exact rather than heuristic: it asks fewer questions, not easier ones.
-
-    Without the third pass, damage can only be followed at column grain for a single hop.
+    Without the second pass, damage can only be followed at column grain for a single hop.
     After that every consumer of a damaged asset looks equally damaged, which over-predicts
     the quiet failures — exactly the ones worth predicting well.
+
+    Every column of the consumer is a candidate, deliberately, and an attempt to narrow that
+    was reverted. The obvious narrowing is to ask each column where it comes from and skip
+    the pairs whose answer does not include the producing asset. It is a third faster and it
+    is wrong: DataHub answers the two directions from different entities and not always
+    symmetrically, and on this estate it dropped ``stg_fx_rates.rate`` ->
+    ``mart_subscription_health.avg_subscriber_lifetime_usd`` — an edge shadow execution
+    proves is real, since that mart genuinely fails when the column is dropped. A read that
+    silently loses edges costs more than a read that takes twelve minutes.
     """
     by_key = {asset.key: asset for asset in assets}
     probes = [
@@ -315,22 +315,12 @@ async def _column_edges(
         if asset.kind == KIND_DATASET
         for column in asset.columns
     ]
-    consumers, sources = await asyncio.gather(
-        asyncio.gather(*(client.downstreams(urn, column=column) for _, urn, column in probes)),
-        asyncio.gather(*(client.upstreams(urn, column=column) for _, urn, column in probes)),
+    consumers = await asyncio.gather(
+        *(client.downstreams(urn, column=column) for _, urn, column in probes)
     )
 
-    # Which assets each column draws from, so that a pair can be dismissed without asking.
-    feeds: dict[tuple[str, str], set[str]] = {}
-    for (key, _, column), upstream in zip(probes, sources):
-        feeds[(key, column)] = {
-            resolved
-            for entity in upstream
-            if (resolved := urn_to_key.get(entity.get("urn", "")))
-        }
-
-    # Candidate landings: the columns of the consumer that draw on the producing asset at
-    # all. Everything else cannot be where this value went.
+    # Candidate landings: every column of every consuming asset is a possible destination
+    # until the catalog says otherwise.
     candidates: list[tuple[str, str, str, str, str, str]] = []
     for (key, source_urn, column), found in zip(probes, consumers):
         for consumer in found:
@@ -339,8 +329,6 @@ async def _column_edges(
                 continue
             target_urn = consumer["urn"]
             for landing in by_key[target].columns:
-                if key not in feeds.get((target, landing.name), set()):
-                    continue
                 candidates.append((key, column, target, landing.name, source_urn, target_urn))
 
     resolved = await asyncio.gather(

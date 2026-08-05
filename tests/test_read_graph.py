@@ -16,12 +16,19 @@ from __future__ import annotations
 import asyncio
 import json
 
-from twin.read.materialize import _fold, _key_for, _physical_urn, _table_edges
+from twin.read.materialize import (
+    _column_edges,
+    _fold,
+    _key_for,
+    _physical_urn,
+    _table_edges,
+)
 from twin.read.model import Asset, Column, ColumnEdge, Edge, EstateGraph, layer_of
 
 PG = "urn:li:dataset:(urn:li:dataPlatform:postgres,warehouse.staging.stg_fx_rates,PROD)"
 DBT = "urn:li:dataset:(urn:li:dataPlatform:dbt,warehouse.staging.stg_fx_rates,PROD)"
 DASH = "urn:li:dashboard:(looker,finance-revenue-review)"
+TARGET_DBT = "urn:li:dataset:(urn:li:dataPlatform:dbt,warehouse.intermediate.int_orders_enriched,PROD)"
 
 
 def pg_entity() -> dict:
@@ -125,6 +132,51 @@ def test_sla_hours_that_is_not_a_number_is_dropped_rather_than_guessed():
 def test_column_lineage_is_read_from_the_physical_entity():
     asset = folded()
     assert _physical_urn(asset) == PG
+
+
+def test_column_edges_are_resolved_to_the_column_they_land_on():
+    """The full three-pass resolution, against a client that answers like DataHub.
+
+    Pinned end to end because the passes are only correct together: the cheap upstream pass
+    exists to shrink the expensive pair-by-pair one, so an error in either silently empties
+    the graph rather than raising anything.
+    """
+    class FakeClient:
+        async def downstreams(self, urn: str, column: str | None = None) -> list[dict]:
+            if urn == PG and column == "rate":
+                return [{"urn": TARGET_DBT}]
+            return []
+
+        async def column_path_exists(self, source: str, target: str, sc: str, tc: str) -> bool:
+            self.asked = getattr(self, "asked", [])
+            self.asked.append((sc, tc))
+            return (sc, tc) == ("rate", "rate_usd")
+
+    source = Asset(
+        key="staging.stg_fx_rates",
+        kind="dataset",
+        name="stg_fx_rates",
+        urns=(DBT, PG),
+        layer="staging",
+        columns=(Column("rate", "NUMERIC", True),),
+    )
+    target = Asset(
+        key="intermediate.int_orders_enriched",
+        kind="dataset",
+        name="int_orders_enriched",
+        urns=(TARGET_DBT,),
+        layer="intermediate",
+        columns=(Column("order_id", "integer", False), Column("rate_usd", "NUMERIC", True)),
+    )
+    urn_to_key = {DBT: source.key, PG: source.key, TARGET_DBT: target.key}
+
+    client = FakeClient()
+    edges = asyncio.run(_column_edges(client, [source, target], urn_to_key))
+
+    assert edges == [ColumnEdge(source.key, "rate", target.key, "rate_usd")]
+    # Every column of the consumer is asked about. Narrowing the candidates by asking each
+    # column where it comes from is a third faster and silently loses real edges.
+    assert sorted(client.asked) == [("rate", "order_id"), ("rate", "rate_usd")]
 
 
 # ---------------------------------------------------------------- graph behaviour
