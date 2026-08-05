@@ -91,26 +91,28 @@ class Edge:
 
 @dataclass(frozen=True, order=True)
 class ColumnEdge:
-    """A column-grain dependency: ``target`` consumes ``source_column`` of ``source``.
+    """A column-grain dependency: ``target.target_column`` derives from ``source.source_column``.
 
     Twin needs this to answer the question a table-grain graph cannot. Dropping a column
     should break the assets that read *that column*, not everything downstream of the table.
     In this estate the difference is large and load-bearing: ``stg_fx_rates.rate`` has three
-    direct consumers while ``stg_fx_rates.rate_date`` has none, and a table-grain model
-    would score both as identical whole-table failures.
+    direct consumers while ``stg_fx_rates.rate_date`` has none, and a table-grain model would
+    score both as identical whole-table failures.
 
-    There is no ``target_column``, and its absence is a fact about the interface rather than
-    an omission. DataHub's MCP server answers column lineage with the downstream *datasets*
-    that consume a column, not the downstream fields. Resolving field to field means calling
-    ``get_lineage_paths_between`` for candidate column pairs, which is quadratic in columns
-    per edge — thousands of round trips to refine a blast radius that is already correct at
-    the granularity that matters. Twin records what the interface returns and says so in the
-    README rather than inferring the missing half.
+    ``target_column`` costs real time to obtain and is worth it. DataHub's MCP server answers
+    column lineage with the downstream *datasets* that consume a column, not the downstream
+    fields, so each landing column is resolved by asking ``get_lineage_paths_between`` whether
+    a specific pair is connected. That is a call per candidate pair, and it is what lets
+    damage be followed at column grain past the first hop: knowing that a null in
+    ``stg_orders.merchant_id`` corrupts ``int_orders_enriched.merchant_id`` and nothing else
+    is the difference between predicting fifteen damaged assets and predicting the ten that
+    really are.
     """
 
     source: str
     source_column: str
     target: str
+    target_column: str
 
 
 @dataclass(frozen=True)
@@ -127,6 +129,13 @@ class EstateGraph:
     column_edges: tuple[ColumnEdge, ...]
     read_at: str
     source: str
+
+    unresolved_columns: int = 0
+    """Column pairs the catalog could not answer for during this read.
+
+    Recorded because those pairs were assumed connected, which widens a predicted blast
+    radius. Excluded from the fingerprint: it describes the read, not the estate.
+    """
 
     _by_key: dict[str, Asset] = field(init=False, repr=False, compare=False, default_factory=dict)
 
@@ -202,6 +211,7 @@ class EstateGraph:
             "fingerprint": self.fingerprint,
             "read_at": self.read_at,
             "source": self.source,
+            "unresolved_columns": self.unresolved_columns,
             **self._structure(),
         }
 
@@ -223,6 +233,7 @@ class EstateGraph:
             column_edges=tuple(ColumnEdge(**e) for e in payload["column_edges"]),
             read_at=payload["read_at"],
             source=payload["source"],
+            unresolved_columns=int(payload.get("unresolved_columns", 0)),
         )
 
     def to_json(self) -> str:

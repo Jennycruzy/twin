@@ -72,6 +72,7 @@ async def materialize(client: DataHubMCP, source: str) -> EstateGraph:
         column_edges=tuple(column_edges),
         read_at=dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat(),
         source=source,
+        unresolved_columns=len(client.unresolved),
     )
 
 
@@ -287,21 +288,50 @@ def _physical_urn(asset: Asset) -> str:
 async def _column_edges(
     client: DataHubMCP, assets: Iterable[Asset], urn_to_key: dict[str, str]
 ) -> list[ColumnEdge]:
-    """Downstream lineage for every column of every dataset."""
+    """Column lineage, resolved all the way to the column it lands on.
+
+    Two passes, because the interface answers two different questions. The first asks which
+    datasets consume a column, which is cheap and gives the edges. The second asks, for each
+    of those edges, which column of the consumer the value actually became — one call per
+    candidate pair, which is the expensive part of a read and the reason the graph is cached.
+
+    Without the second pass, damage can only be followed at column grain for a single hop.
+    After that every consumer of a damaged asset looks equally damaged, which over-predicts
+    the quiet failures — exactly the ones worth predicting well.
+    """
+    by_key = {asset.key: asset for asset in assets}
     probes = [
         (asset.key, _physical_urn(asset), column.name)
-        for asset in assets
+        for asset in by_key.values()
         if asset.kind == KIND_DATASET
         for column in asset.columns
     ]
-    results = await asyncio.gather(
+    consumers = await asyncio.gather(
         *(client.downstreams(urn, column=column) for _, urn, column in probes)
     )
 
-    edges: set[ColumnEdge] = set()
-    for (key, _, column), consumers in zip(probes, results):
-        for consumer in consumers:
+    # Candidate landings: every column of every consuming asset is a possible destination
+    # until the catalog says otherwise.
+    candidates: list[tuple[str, str, str, str, str, str]] = []
+    for (key, source_urn, column), found in zip(probes, consumers):
+        for consumer in found:
             target = urn_to_key.get(consumer.get("urn", ""))
-            if target and target != key:
-                edges.add(ColumnEdge(source=key, source_column=column, target=target))
+            if not target or target == key or target not in by_key:
+                continue
+            target_urn = consumer["urn"]
+            for landing in by_key[target].columns:
+                candidates.append((key, column, target, landing.name, source_urn, target_urn))
+
+    resolved = await asyncio.gather(
+        *(
+            client.column_path_exists(source_urn, target_urn, source_column, target_column)
+            for _, source_column, _, target_column, source_urn, target_urn in candidates
+        )
+    )
+
+    edges = {
+        ColumnEdge(source=key, source_column=source_column, target=target, target_column=target_column)
+        for (key, source_column, target, target_column, _, _), connected in zip(candidates, resolved)
+        if connected
+    }
     return sorted(edges)

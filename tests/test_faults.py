@@ -150,8 +150,8 @@ def estate() -> EstateGraph:
             Edge("marts.downstream", "dashboard:finance"),
         ),
         column_edges=(
-            ColumnEdge(ORIGIN, "merchant_id", "intermediate.reads_merchant"),
-            ColumnEdge(ORIGIN, "order_date", "intermediate.reads_date"),
+            ColumnEdge(ORIGIN, "merchant_id", "intermediate.reads_merchant", "merchant_id"),
+            ColumnEdge(ORIGIN, "order_date", "intermediate.reads_date", "order_date"),
         ),
         read_at="2026-08-05T09:00:00+00:00",
         source="test",
@@ -189,6 +189,55 @@ def test_a_staleness_fault_predicts_degradation_and_never_an_outage():
 def test_a_deletion_predicts_outage_and_never_mere_degradation():
     timeline = predict(estate(), scenario("drop_asset"))
     assert timeline.with_impact(DEGRADED) == ()
+
+
+def carrying_estate() -> EstateGraph:
+    """An estate where the mart reads a column that has nothing to do with the fault.
+
+    ``marts.downstream`` derives its only column from ``reads_merchant.amount``. A null in
+    ``stg_orders.merchant_id`` corrupts ``reads_merchant.merchant_id`` and stops there — the
+    mart's numbers are untouched, and a model that follows table lineage cannot tell.
+    """
+    base = estate()
+    return EstateGraph(
+        assets=base.assets,
+        edges=base.edges,
+        column_edges=base.column_edges
+        + (
+            ColumnEdge("intermediate.reads_merchant", "amount", "marts.downstream", "total"),
+            ColumnEdge("intermediate.reads_date", "order_date", "marts.unowned_mart", "day"),
+        ),
+        read_at=base.read_at,
+        source=base.source,
+    )
+
+
+def test_degradation_stops_where_the_corrupted_column_does_not_flow():
+    """The fix for the false alarms on merchant_id_nulled.
+
+    Damage that is merely wrong values travels only along the columns derived from those
+    values. The mart downstream reads a different column, so it is genuinely fine.
+    """
+    timeline = predict(carrying_estate(), scenario("null_out_column", "merchant_id"))
+    assert "intermediate.reads_merchant" in timeline.broken
+    assert "marts.downstream" not in timeline.broken
+
+
+def test_an_outage_still_reaches_everything_downstream():
+    """A missing relation cannot be read at all, whichever column you wanted from it."""
+    timeline = predict(carrying_estate(), scenario("drop_column", "merchant_id"))
+    assert "marts.downstream" in timeline.broken
+
+
+def test_damage_falls_back_to_table_grain_where_column_lineage_is_absent():
+    """No information is a reason for caution, not for silence.
+
+    ``estate()`` has no column edges leaving the intermediate models, so a degrading fault
+    must still be assumed to reach what is downstream of them. Under-predicting a quiet
+    failure is the more expensive error.
+    """
+    timeline = predict(estate(), scenario("null_out_column", "merchant_id"))
+    assert "marts.downstream" in timeline.broken
 
 
 # ---------------------------------------------------------------- paging

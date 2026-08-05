@@ -27,7 +27,7 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass
 
-from twin.faults import cascade_impact
+from twin.faults import UNAVAILABLE, cascade_impact
 from twin.read.model import KIND_DATASET, EstateGraph
 from twin.simulate.scenario import Scenario
 
@@ -132,23 +132,85 @@ def _breaks_on_read(graph: EstateGraph, key: str) -> bool:
     return (asset.materialization or "").lower() == "view"
 
 
-def _first_wave(graph: EstateGraph, scenario: Scenario) -> tuple[dict[str, str], str]:
-    """The assets the fault reaches directly, and how each of them is described.
+def _all_columns(graph: EstateGraph, key: str) -> frozenset[str]:
+    return frozenset(c.name for c in graph.asset(key).columns)
+
+
+def _first_wave(
+    graph: EstateGraph, scenario: Scenario
+) -> tuple[dict[str, tuple[str, frozenset[str]]], str]:
+    """The assets the fault reaches directly, why, and which of their columns it corrupts.
 
     A column-grained fault reaches only the readers of that column, which is the claim
-    column-level lineage exists to make. A table-grained one — the asset is deleted, the
-    asset stops updating — reaches everything that reads the asset at all, because there is
-    no column to discriminate on.
+    column-level lineage exists to make, and corrupts only the columns those readers derived
+    from it. A table-grained fault — the asset is deleted, the asset stops updating — reaches
+    every consumer and affects all of their columns, because there is no column to
+    discriminate on.
     """
     origin = scenario.fault.asset
     definition = scenario.fault.definition
 
     if definition.is_column_grained:
         column = scenario.fault.column or ""
-        targets = {edge.target for edge in graph.columns_consuming(origin, column)}
-        return {key: f"reads {origin}.{column}" for key in targets}, definition.impact
+        landings: dict[str, set[str]] = {}
+        for edge in graph.columns_consuming(origin, column):
+            landings.setdefault(edge.target, set()).add(edge.target_column)
+        return (
+            {
+                key: (f"reads {origin}.{column}", frozenset(columns))
+                for key, columns in landings.items()
+            },
+            definition.impact,
+        )
 
-    return {key: f"reads {origin}" for key in graph.downstream(origin)}, definition.impact
+    return (
+        {
+            key: (f"reads {origin}", _all_columns(graph, key))
+            for key in graph.downstream(origin)
+        },
+        definition.impact,
+    )
+
+
+def _spread(
+    graph: EstateGraph, key: str, corrupted: frozenset[str], impact: str
+) -> list[tuple[str, frozenset[str], str]]:
+    """Where damage in ``key`` goes next, and what it corrupts when it gets there.
+
+    The two impacts spread differently, and conflating them is what makes a propagation model
+    over-predict.
+
+    An asset that is **unavailable** takes every consumer with it whatever columns they read:
+    a relation that is not there cannot be read at all. That is table grain, and it is right.
+
+    An asset that is **degraded** carries wrong values in particular columns, and corrupts
+    only the downstream columns derived from those. A mart that never touches the affected
+    column is genuinely fine, and predicting otherwise is a false alarm that costs the report
+    its credibility.
+
+    Where an asset has no column lineage at all, damage falls back to table grain rather than
+    stopping. Missing a real failure is the more expensive error, so the absence of
+    information produces caution rather than silence.
+    """
+    if impact == UNAVAILABLE:
+        return [(t, _all_columns(graph, t), f"reads {key}") for t in graph.downstream(key)]
+
+    outgoing = [e for e in graph.column_edges if e.source == key]
+    if not outgoing:
+        return [(t, _all_columns(graph, t), f"reads {key}") for t in graph.downstream(key)]
+
+    landings: dict[str, set[str]] = {}
+    for edge in outgoing:
+        if edge.source_column in corrupted:
+            landings.setdefault(edge.target, set()).add(edge.target_column)
+    return [
+        (target, frozenset(columns), f"reads {key}.{sorted(corrupted & _sources_into(outgoing, target))[0]}")
+        for target, columns in landings.items()
+    ]
+
+
+def _sources_into(edges: list, target: str) -> set[str]:
+    return {e.source_column for e in edges if e.target == target}
 
 
 def predict(graph: EstateGraph, scenario: Scenario) -> Timeline:
@@ -163,13 +225,14 @@ def predict(graph: EstateGraph, scenario: Scenario) -> Timeline:
     failed_at: dict[str, dt.datetime] = {}
     reasons: dict[str, str] = {}
     impacts: dict[str, str] = {}
-    frontier: list[tuple[str, dt.datetime, str, str]] = [
-        (key, fault_at, reason, impact) for key, reason in sorted(wave.items())
+    corrupted: dict[str, frozenset[str]] = {}
+    frontier: list[tuple[str, dt.datetime, str, str, frozenset[str]]] = [
+        (key, fault_at, reason, impact, columns) for key, (reason, columns) in sorted(wave.items())
     ]
 
     while frontier:
         frontier.sort(key=lambda item: (item[1], item[0]))
-        key, upstream_failed_at, reason, upstream_impact = frontier.pop(0)
+        key, upstream_failed_at, reason, upstream_impact, columns = frontier.pop(0)
         if key == origin or not graph.has(key):
             continue
 
@@ -178,14 +241,18 @@ def predict(graph: EstateGraph, scenario: Scenario) -> Timeline:
             if _breaks_on_read(graph, key)
             else _next_refresh(graph.asset(key).refresh_cadence, upstream_failed_at)
         )
-        if key in failed_at and failed_at[key] <= when:
+        # Revisited only when this path is earlier, or when it corrupts something the
+        # earlier path did not — damage arriving by two routes is the union of both.
+        already = corrupted.get(key, frozenset())
+        if key in failed_at and failed_at[key] <= when and columns <= already:
             continue
 
-        failed_at[key] = when
+        failed_at[key] = min(when, failed_at.get(key, when))
         reasons[key] = reason
         impacts[key] = upstream_impact
-        for downstream in graph.downstream(key):
-            frontier.append((downstream, when, f"reads {key}", cascade_impact(upstream_impact)))
+        corrupted[key] = already | columns
+        for target, landing, why in _spread(graph, key, corrupted[key], upstream_impact):
+            frontier.append((target, when, why, cascade_impact(upstream_impact), landing))
 
     events = tuple(
         sorted(

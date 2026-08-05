@@ -57,8 +57,8 @@ def estate() -> EstateGraph:
             Edge("marts.downstream_of_uses", "dashboard:finance"),
         ),
         column_edges=(
-            ColumnEdge("staging.fx", "rate", "intermediate.uses_rate"),
-            ColumnEdge("staging.fx", "rate_date", "intermediate.ignores_rate"),
+            ColumnEdge("staging.fx", "rate", "intermediate.uses_rate", "rate_usd"),
+            ColumnEdge("staging.fx", "rate_date", "intermediate.ignores_rate", "as_of"),
         ),
         read_at="2026-08-05T09:00:00+00:00",
         source="test",

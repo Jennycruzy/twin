@@ -58,6 +58,8 @@ def _print_report(graph: EstateGraph, elapsed: float, previous: str | None, cach
     print(f"    {'table edges':<16} {len(graph.edges):>4}")
     print(f"    {'column edges':<16} {len(graph.column_edges):>4}")
     print(f"    {'columns read':<16} {sum(len(a.columns) for a in datasets):>4}")
+    if graph.unresolved_columns:
+        print(f"    {'unresolved':<16} {graph.unresolved_columns:>4}  (assumed connected)")
 
     print("\n  OPERATIONAL METADATA")
     print(f"    {'with an SLA':<16} {len(with_sla):>4}")

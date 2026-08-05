@@ -54,6 +54,7 @@ class DataHubMCP:
         self._session = session
         self._gate = asyncio.Semaphore(concurrency)
         self.calls = 0
+        self.unresolved: list[str] = []
 
     # ---------------------------------------------------------------- lifecycle
 
@@ -155,6 +156,41 @@ class DataHubMCP:
         asked in: this column is about to break, who reads it?
         """
         return await self._lineage(urn, upstream=False, column=column)
+
+    async def column_path_exists(
+        self, source_urn: str, target_urn: str, source_column: str, target_column: str
+    ) -> bool:
+        """Whether one column derives from another.
+
+        The tool reports absence by failing rather than by returning an empty result, and it
+        does so in more than one wording — "No lineage found from X" when the source column
+        feeds nothing, "No lineage path found from X to Y" when it feeds something other than
+        this target. Both are answers rather than errors.
+
+        Anything else is a genuine failure, and it is counted rather than raised. One
+        unresolvable pair out of thousands must not abandon a whole read, but it must not
+        vanish either: the count is reported at the end of a read, and an unresolved pair is
+        treated as connected. That errs toward predicting damage that turns out not to have
+        happened, which shows up as a false alarm — the visible kind of wrong, rather than a
+        silent gap in a blast radius.
+        """
+        try:
+            await self._call(
+                "get_lineage_paths_between",
+                {
+                    "source_urn": source_urn,
+                    "target_urn": target_urn,
+                    "source_column": source_column,
+                    "target_column": target_column,
+                    "direction": "downstream",
+                },
+            )
+        except DataHubMCPError as exc:
+            if "No lineage" in str(exc):
+                return False
+            self.unresolved.append(f"{source_column} -> {target_column}: {str(exc)[-120:]}")
+            return True
+        return True
 
     async def _lineage(
         self, urn: str, upstream: bool, column: str | None

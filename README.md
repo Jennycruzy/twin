@@ -143,13 +143,13 @@ make graph    # print the cached graph without touching DataHub
 ```
   ESTATE GRAPH
   --------------------------------------------------------------------
-  Read from      http://datahub-gms:8080 over MCP in 125.4s
-  Fingerprint    1ab1aaacad9403ce  (first read)
-  Cached at      .twin/graph-1ab1aaacad9403ce.json
+  Read from      http://datahub-gms:8080 over MCP in 716.2s
+  Fingerprint    2b0ff33cd937f51f  (first read)
+  Cached at      .twin/graph-2b0ff33cd937f51f.json
 
   ASSETS BY LAYER              ASSETS BY KIND            DEPENDENCIES
     raw_pg             18        dataset            66     table edges       125
-    raw_events          9        chart              10     column edges      251
+    raw_events          9        chart              10     column edges      322
     staging            19        mlFeature           9     columns read      686
     intermediate        9        dashboard           4
     marts               8        mlFeatureTable      1    OPERATIONAL METADATA
@@ -162,7 +162,7 @@ make graph    # print the cached graph without touching DataHub
     intermediate.int_payment_attempts             4 direct, 17 total
     ml.feature_customer_risk                      4 direct,  6 total
 
-  estate 1ab1aaacad9403ce: 91 assets (66 datasets, 25 consumers), 125 edges, 251 column edges, 9 unowned
+  estate 2b0ff33cd937f51f: 91 assets (66 datasets, 25 consumers), 125 edges, 322 column edges, 9 unowned
 ```
 
 Three things about that output are worth explaining, because they are decisions rather than
@@ -175,7 +175,7 @@ both URNs, taking column types from the physical entity and ownership, tags and 
 metadata from the dbt entity. Without the fold the estate would appear to have 132 datasets
 and every table would list its own sibling as a dependency.
 
-**251 column edges, not 125 table edges.** Column-grain lineage is the difference between a
+**322 column edges, not 125 table edges.** Column-grain lineage is the difference between a
 blast radius and a guess. `stg_fx_rates.rate` has three direct consumers; `rate_date` has
 none. A table-grain model scores both columns as the same whole-table failure, which
 overstates the damage in exactly the direction that makes a demo look impressive.
@@ -196,10 +196,15 @@ Recorded here rather than worked around, because the gaps shape what later stage
   Usage-weighted scoring in Stage 3 therefore needs a decision that is not yet made, and
   the options — emit Query entities during ingestion, or read usage through the SDK and
   label it as a documented exception — will be recorded here once one is taken.
-- **No column-to-column lineage.** Column lineage answers with the downstream *datasets*
-  that consume a column, not the downstream fields. Resolving field to field means calling
-  `get_lineage_paths_between` for candidate column pairs, which is quadratic in columns per
-  edge. Twin records what the interface returns rather than inferring the missing half.
+- **Column-to-column lineage is not returned; it has to be interrogated.** Asking which
+  assets consume a column answers with the downstream *datasets*, not the downstream fields.
+  The landing column is obtainable, but only by asking `get_lineage_paths_between` whether a
+  specific pair is connected — one call per candidate pair, thousands per read. Twin pays
+  that cost because damage cannot be followed at column grain past the first hop without it,
+  and it is the difference between predicting fifteen damaged assets and the ten that are.
+  Two further wrinkles worth knowing if you build on this interface: absence of a path is
+  reported by raising rather than by returning an empty result, in two different wordings,
+  and a pair that cannot be resolved is counted and assumed connected rather than dropped.
 - **No `mlModelDeployment`.** It is not searchable through the filter syntax and its
   properties are not returned by `get_entities`, so Twin's ML branch is modelled as far as
   the model itself. The deployment is the one estate entity the pipeline cannot see, and
@@ -262,29 +267,39 @@ make run SCENARIO=scenarios/orders_feed_stalls.yml
 | `fx_rate_column_drop` | 1.00 / 1.00 | 1.00 / 1.00 (14 unavailable) | 11 |
 | `fx_rate_type_regression` | 1.00 / 1.00 | 1.00 / 1.00 (14 unavailable) | 11 |
 | `orders_feed_stalls` | 1.00 / 1.00 | 1.00 / 1.00 (15 degraded) | 13 |
-| `merchant_id_nulled` | 1.00 / 1.00 | **0.67** / 1.00 (10 degraded) | 5 |
+| `merchant_id_nulled` | 1.00 / 1.00 | 1.00 / 1.00 (10 degraded) | 5 |
 
-Precision / recall. The last column is the control: models rebuilt in the same run that came
-out byte-for-byte identical to production. A comparison that reported "different" for
-everything would manufacture perfect scores, and that column is what shows it does not.
+Precision / recall. **The last column is the one to read.** It counts models rebuilt in the
+same run that came out byte-for-byte identical to production — 45 across the five scenarios,
+every one an opportunity to raise a false alarm that was not taken. A comparison that
+reported "different" for everything would manufacture a table of 1.00s, and that column is
+what distinguishes this from one.
 
-**Twin is wrong on `merchant_id_nulled`, and the report names it.** Five assets were
-predicted to be degraded and came out identical to production:
+### How the last row got there, because it did not start there
 
-```
-    false alarm  marts.mart_subscription_health               identical to production
-    false alarm  marts.mart_finance_reconciliation            identical to production
-    false alarm  ml.feature_customer_risk                     identical to production
-    ...
-    predicted 15   observed 10   precision 0.67   recall 1.00
-```
+`merchant_id_nulled` first scored **0.67**, with five assets predicted degraded that came out
+identical to production. The cause was real: the first wave of a column fault was found at
+column grain, but degradation *after* that first hop propagated at table grain, so everything
+downstream of a degraded asset inherited it whether or not it read the affected values.
 
-The cause is known and stated rather than tuned away. The first wave of a column fault is
-found at column grain, but degradation *after* that first hop propagates at table grain — so
-anything downstream of a degraded asset is predicted degraded, whether or not it reads the
-affected values. Propagating column lineage the whole way down would fix these five, and it
-is the obvious next improvement to the model. It has not been made yet, because making it in
-response to this scenario is how a model gets fitted to its demo.
+The fix follows column lineage the whole way down for degradation, while leaving
+unavailability at table grain — a missing relation cannot be read whichever column you
+wanted from it, so table grain is correct there and column grain is correct for damage. That
+required Stage 1 to resolve which column each dependency *lands on*, which DataHub does not
+return and has to be interrogated pair by pair. It is why a read takes twelve minutes rather
+than two, and why the graph gained 71 column edges.
+
+Two things are worth stating about that, because a table of five perfect scores invites
+exactly this suspicion:
+
+**The change was made generally and then re-run against all five**, not tuned until one
+number moved. It is pinned by unit tests including the fallback case, and none of the other
+four scenarios changed.
+
+**There is now no scenario in this repository where Twin is wrong**, and that is a weaker
+position to be in, not a stronger one. The honest reading of the table above is "the model
+survives the five faults it has been tested against", not "the model is correct". The report
+prints that warning on every run that scores perfectly.
 
 ### Who gets paged
 
@@ -495,9 +510,14 @@ Honest and specific, and this list will grow rather than shrink as stages land.
   4 executes as the owner of everything it creates, so it cannot revoke its own privileges
   convincingly, and a simulated permission error would be exactly the kind of pretend
   evidence this project exists to avoid.
-- **Degradation propagates at table grain after the first hop.** This over-predicts, and
-  `merchant_id_nulled` shows it costing five false alarms and 0.33 of precision. Named above
-  rather than tuned away.
+- **Where column lineage is absent, damage falls back to table grain** and over-predicts.
+  That is deliberate — under-predicting a quiet failure is the more expensive error — but it
+  means the precision of a degrading fault depends on how completely the catalog describes
+  the columns involved.
+- **Every scenario currently scores 1.00.** Read that as "survives the five faults it has
+  been tested against", not as "correct". The control column above is the reason to believe
+  the scores at all, and a sixth fault chosen adversarially would be worth more than a sixth
+  variation on the five.
 - **Verification grades what broke, not when.** The predicted timeline's ordering is not
   checked by shadow execution. See *What is and is not being claimed*.
 - **Stages 3 and 5 do not exist yet.** See the build status table.

@@ -137,7 +137,7 @@ def graph() -> EstateGraph:
     return EstateGraph(
         assets=(dataset("a"), dataset("b"), dataset("c")),
         edges=(Edge("a", "b"), Edge("b", "c")),
-        column_edges=(ColumnEdge("a", "rate", "b"),),
+        column_edges=(ColumnEdge("a", "rate", "b", "rate"),),
         read_at="2026-08-05T09:00:00+00:00",
         source="http://datahub-gms:8080",
     )
@@ -159,7 +159,7 @@ def test_reachability_terminates_on_a_cycle():
 
 
 def test_column_consumers_are_resolved_per_column():
-    assert graph().columns_consuming("a", "rate") == (ColumnEdge("a", "rate", "b"),)
+    assert graph().columns_consuming("a", "rate") == (ColumnEdge("a", "rate", "b", "rate"),)
     assert graph().columns_consuming("a", "rate_date") == ()
 
 
