@@ -16,7 +16,7 @@ from typing import Iterable
 from twin.read import read_estate
 from twin.read.cache import load_latest, store
 from twin.read.model import EstateGraph
-from twin.score.fragility import COMPONENTS, CONFIG, Score, Weights, score_estate
+from twin.score.fragility import COMPONENTS, CONFIG, Coverage, Score, Weights, score_estate
 from twin.score.knockout import sweep
 from twin.score.usage import read_usage
 
@@ -115,8 +115,16 @@ def main(argv: Iterable[str] | None = None) -> int:
     scores = score_estate(graph, knockouts, usage, weights)
 
     print()
-    print(f"  estate {graph.fingerprint} — {len(scores)} assets swept, "
-          f"{len(usage)} with recorded usage")
+    coverage = Coverage.measure(graph, usage)
+    print(f"  estate {graph.fingerprint} — {len(scores)} assets swept")
+    print(
+        f"  metadata coverage: replication {coverage.replication:.0%}, "
+        f"usage {coverage.usage:.0%}, ownership {coverage.ownership:.0%}, "
+        f"tiers {coverage.tiers:.0%}"
+    )
+    if coverage.replication < 0.5:
+        print("  note: recovery rests on replication metadata that most assets lack;")
+        print("        the ranking is falling back toward fan-out")
     if args.append_history:
         _append_history(graph, scores, args.append_history)
     _print_table(scores, args.limit)

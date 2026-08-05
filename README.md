@@ -344,16 +344,22 @@ told, and the case that decides it is where size and danger disagree.
 
 ```
    #  ASSET                             SCORE   blast  expos  recov  conce  blind   BLAST
-   1  raw_pg.fx_rates                    77.9    0.95   0.95   1.00   0.29   0.12   15+21
-   2  staging.stg_fx_rates               77.4    0.92   0.95   1.00   0.30   0.12   14+21
-   3  intermediate.int_orders_enriched   58.6    0.87   0.93   0.33   0.35   0.00   12+21
-   4  raw_pg.orders                      55.1    1.00   1.00   0.00   0.26   0.12   16+22
+   1  raw_pg.fx_rates                    61.5    0.40   0.84   1.00   0.29   0.12   15+21
+   2  staging.stg_fx_rates               61.3    0.38   0.84   1.00   0.30   0.12   14+21
+   3  intermediate.int_orders_enriched   43.3    0.36   0.83   0.33   0.35   0.00   12+21
+   4  staging.stg_orders                 37.9    0.41   0.89   0.00   0.29   0.12   15+22
+   5  raw_pg.orders                      37.8    0.42   0.89   0.00   0.26   0.12   16+22
 ```
 
 Orders wins on blast **and** on exposure — the two components most scorers would use — and
 loses on recovery, because it has a standby and the FX feed does not. That single difference
 is the whole ranking, and it is the one that matters operationally: losing orders is
 survivable because the data can be served from elsewhere; losing fx_rates is not.
+
+**The model follows the metadata rather than remembering the answer.** Flip the two feeds —
+give orders no standby and fx_rates one, changing nothing else — and the ranking flips with
+it: `raw_pg.orders` becomes the top finding. That is the cheapest available evidence that the
+scorer is not fitted to this estate, and it is pinned by a test.
 
 **The sweep does not count graph edges.** It runs the propagation model once per asset with a
 `drop_asset` fault — the same model Stage 4 executes against a real warehouse — and reads the
@@ -368,13 +374,19 @@ is explained in [docs/SCORING.md](docs/SCORING.md).
 
 Three limits, stated where they can be seen rather than discovered:
 
-- **Scores are positions within this estate**, not absolute values. Blast and exposure are
-  normalised against this platform's own maximum, so two estates' numbers are not comparable.
-- **Recovery depends on metadata existing.** On an estate where nobody records replication,
-  that component degenerates to a constant and the ranking collapses back toward fan-out —
-  which is to say, back toward the wrong answer.
-- **The model finds the weaknesses planted in this estate.** That is evidence it is not
-  arbitrary. It is not evidence that it generalises.
+- **Scores are shares of this estate**, not absolute values. Blast is a fraction of the
+  assets present and exposure a fraction of the queries recorded, so two estates' numbers are
+  not comparable. They are comparable *across nights on the same estate*, which is what the
+  fragility trend needs — an earlier version normalised against the highest-scoring asset of
+  the night, which made every score move whenever anything else did.
+- **Recovery depends on metadata existing.** Every asset here can be traced to a source that
+  declares replication, so `make score` reports 100% coverage for it. On an estate where
+  nobody records it, the component goes flat and the ranking collapses back toward fan-out —
+  which is to say back toward the wrong answer. The report prints coverage for exactly this
+  reason, and warns when the component it is leaning on has nothing underneath it.
+- **The model finds the weaknesses planted in this estate**, and follows the metadata when
+  they move. That is evidence it is not arbitrary or fitted. It is still not evidence that it
+  generalises to a platform built by someone else, which would need a second estate.
 
 ## Stage 4: executing the failure and grading the prediction
 

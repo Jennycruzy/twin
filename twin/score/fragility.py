@@ -62,6 +62,40 @@ class Weights:
 
 
 @dataclass(frozen=True)
+class Coverage:
+    """How much of the estate carried the metadata each component needs.
+
+    Published because a component with no data underneath it does not fail loudly — it goes
+    flat, and the ranking quietly falls back to the components that remain. On an estate
+    where nobody records replication, `recovery` contributes nothing and the model collapses
+    toward fan-out, which is the answer it exists to avoid. A reader is entitled to know
+    which of these numbers is resting on measurement.
+    """
+
+    replication: float
+    usage: float
+    ownership: float
+    tiers: float
+
+    @classmethod
+    def measure(cls, graph: EstateGraph, usage: Mapping[str, Usage]) -> "Coverage":
+        datasets = graph.of_kind(KIND_DATASET)
+        total = float(len(datasets)) or 1.0
+        return cls(
+            # Counted as "could this asset's recovery be determined at all", not as "does
+            # this asset declare replication". Replication is declared on the sources that
+            # land data, and a model twelve hops downstream inherits it, so counting
+            # declarations would report 41% coverage for a component that is actually
+            # answerable everywhere — and would fire a warning about a problem that is not
+            # happening. A misleading health indicator is worse than none.
+            replication=sum(1 for a in datasets if _recovery_is_determined(graph, a.key)) / total,
+            usage=len(usage) / total,
+            ownership=sum(1 for a in datasets if a.owners) / total,
+            tiers=sum(1 for a in datasets if a.criticality_tier) / total,
+        )
+
+
+@dataclass(frozen=True)
 class Score:
     """One asset's fragility, with the parts it was built from."""
 
@@ -75,18 +109,34 @@ class Score:
         return "  ".join(f"{name[:4]} {self.components[name]:.2f}" for name in COMPONENTS)
 
 
-def _normalise(values: Mapping[str, float]) -> dict[str, float]:
-    """Min-max across the estate, with a flat distribution scoring zero rather than one.
+def _as_share(values: Mapping[str, float], total: float) -> dict[str, float]:
+    """Express each value as a share of a fixed total rather than of the estate's spread.
 
-    If every asset shares a value, that value distinguishes nothing, and treating it as
-    maximum fragility everywhere would silently add a constant to every score.
+    Min-max normalisation was the obvious choice here and is wrong for one specific reason:
+    it makes a score relative to the other assets *on the night it was computed*. The largest
+    asset always scores 1.00, so a fragility score rising over three weeks could mean the
+    asset became more dangerous, or could mean something bigger was deleted. The nightly
+    trend is built on these numbers, and a trend whose baseline moves underneath it measures
+    nothing.
+
+    A fixed denominator — the size of the estate, the total queries recorded — keeps the
+    ranking identical within a run and makes two runs comparable. It also means a score of
+    1.00 is unreachable in practice, which is correct: no single asset is the whole platform.
     """
-    if not values:
-        return {}
-    low, high = min(values.values()), max(values.values())
-    if high == low:
+    if not values or total <= 0:
         return {key: 0.0 for key in values}
-    return {key: (value - low) / (high - low) for key, value in values.items()}
+    return {key: min(value / total, 1.0) for key, value in values.items()}
+
+
+def _recovery_is_determined(graph: EstateGraph, key: str) -> bool:
+    """Whether anything beneath this asset declares replication.
+
+    An asset with nothing declared anywhere upstream scores the neutral 0.5, which is a
+    stand-in rather than a measurement, and is what coverage is reporting on.
+    """
+    if graph.asset(key).replicated is not None:
+        return True
+    return any(graph.asset(k).replicated is not None for k in _reachable_upstream(graph, key))
 
 
 def _unprotected(graph: EstateGraph, key: str) -> float:
@@ -168,9 +218,14 @@ def score_estate(
         for key, shot in shots.items()
     }
 
+    # Denominators are properties of the estate, not of the spread of scores within it, so
+    # tonight's number means the same thing as last night's.
+    estate_size = float(len(graph.assets))
+    total_queries = float(sum(u.queries for u in usage.values()))
+
     normalised = {
-        "blast": _normalise(blast),
-        "exposure": _normalise(exposure),
+        "blast": _as_share(blast, estate_size),
+        "exposure": _as_share(exposure, total_queries),
         # Already 0..1 by construction and meaningful in absolute terms: normalising would
         # make "least bad in this estate" look safe rather than merely comparatively better.
         "recovery": recovery,

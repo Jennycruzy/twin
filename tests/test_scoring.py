@@ -102,6 +102,35 @@ def test_the_unprotected_asset_outranks_the_bigger_protected_one():
     assert scores["raw.small"].score > scores["raw.big"].score
 
 
+def test_swapping_the_trap_swaps_the_answer():
+    """The test that separates a model from a memory.
+
+    A scorer fitted to this estate would keep naming the same asset whatever the metadata
+    said. Flipping which of the two feeds has a standby — changing nothing else, not the
+    shape, not the reach, not the ownership — must flip the ranking with it.
+
+    Run against the real estate this reverses the top finding from raw_pg.fx_rates to
+    raw_pg.orders, which is the strongest cheap evidence available that the model reads the
+    platform rather than remembering it.
+    """
+    graph = estate()
+    swapped = EstateGraph(
+        assets=tuple(
+            # big loses its standby, small gains one — everything else identical.
+            asset(a.key, replicated=(a.key == "raw.small"), owners=a.owners)
+            if a.key in ("raw.big", "raw.small")
+            else a
+            for a in graph.assets
+        ),
+        edges=graph.edges,
+        column_edges=graph.column_edges,
+        read_at=graph.read_at,
+        source=graph.source,
+    )
+    scored = {s.key: s for s in score_estate(swapped, sweep(swapped), {}, WEIGHTS)}
+    assert scored["raw.big"].score > scored["raw.small"].score
+
+
 def test_the_bigger_asset_still_wins_on_blast():
     """The disagreement is genuine, not an artefact of the smaller asset looking larger."""
     scores = scores_for()
