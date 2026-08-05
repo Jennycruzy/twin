@@ -1,0 +1,63 @@
+# The nightly read.
+#
+# Twin's fragility trend is a claim about change over time, and that claim is only worth
+# anything if the runs actually happened. Accumulated history cannot be manufactured later,
+# so this workflow is scheduled the day Stage 1 starts producing output rather than the week
+# of a deadline: each night it stands the whole stack up from nothing, builds the estate,
+# reads it back through the DataHub MCP server, and appends one measured line to
+# examples/history/nightly.jsonl.
+#
+# The record widens as stages land — fragility scores join it when Stage 3 exists — but it
+# stays append-only, and a line is written only when a run genuinely succeeded.
+
+name: nightly
+
+on:
+  schedule:
+    # 03:17 UTC. Deliberately not on the hour: GitHub's scheduler queues heavily at :00 and
+    # a run that starts forty minutes late every night makes read-to-read intervals uneven.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: twin-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  read-the-estate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start DataHub and the warehouse
+        run: make up
+
+      - name: Build the demo estate
+        run: make estate
+
+      - name: Prove the estate is real
+        run: make verify-estate
+
+      - name: Read the estate over MCP
+        run: docker compose run --rm -T twin python -m twin.read --append-history examples/history/nightly.jsonl
+
+      - name: Record the run
+        run: |
+          if git diff --quiet -- examples/history/nightly.jsonl; then
+            echo "no new history line; the read must have failed" >&2
+            exit 1
+          fi
+          git config user.name jennycruzy
+          git config user.email jennycruzy@users.noreply.github.com
+          git add examples/history/nightly.jsonl
+          git commit -m "Record the nightly estate read for $(date -u +%Y-%m-%d)"
+          git push
+
+      - name: Tear the stack down
+        if: always()
+        run: make down

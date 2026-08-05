@@ -94,6 +94,17 @@ verify-estate: ## Prove the estate is real (prints a table, exits non-zero on fa
 	@$(SAY) "Verifying the estate against DataHub."
 	@$(RUN) python -m estate.verify_estate
 
+# ------------------------------------------------------------------ stage 1: read
+
+.PHONY: read
+read: ## Read the estate from DataHub over MCP and cache the graph
+	@$(SAY) "Reading the estate through the DataHub MCP server."
+	@$(RUN) python -m twin.read
+
+.PHONY: graph
+graph: ## Print the cached estate graph without touching DataHub
+	@$(RUN) python -m twin.read --cached
+
 # ------------------------------------------------------------------ tests
 
 .PHONY: test
