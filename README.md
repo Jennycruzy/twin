@@ -583,6 +583,12 @@ duplicating them, and `make unwrite` marks them **resolved rather than deleting 
 condition was real when it was recorded, and a catalog that forgets its incidents cannot be
 used to argue about how often anything breaks.
 
+`make unwrite` exits non-zero if it cannot establish that every incident was resolved. An
+asset DataHub will not resolve is reported as unreachable rather than counted as clean, and
+the reason is printed. Clearing values and resolving incidents are reported separately
+because they fail separately, and a command that swept a catalog it could not read and then
+announced success would be the same class of claim this project exists to refuse.
+
 Raising them is behind a flag rather than on by default: a verification run should not change
 the estate's metadata because somebody wanted to see a scorecard.
 
