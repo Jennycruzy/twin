@@ -1,0 +1,113 @@
+# The consumer workload.
+#
+# Twin weights fragility by how heavily an asset is actually used, so the estate needs
+# usage data. Rather than inventing query counts, this file declares a workload that is
+# genuinely executed against the warehouse: `python -m estate.ingest.workload` runs every
+# query below, the stated number of times per day, for the stated number of days, and the
+# usage statistics written to DataHub are counts of executions that really happened.
+#
+# The numbers are therefore honest in a specific and limited sense: they are real counts
+# of a synthetic workload. They are not measurements of a real company's BI traffic. What
+# they buy is a realistic *skew* — the finance revenue dashboard is refreshed constantly
+# and a support query runs twice a week — which is what makes usage-weighted scoring
+# produce a meaningful ranking rather than a flat one.
+#
+#   daily_runs  executions per simulated day
+#   users       who runs it. Drives DataHub's distinct-consumer count, which Stage 3 uses
+#               separately from raw volume: an asset with one heavy user is a different
+#               risk from one with twenty light ones.
+
+days: 7
+
+queries:
+  - file: revenue_trend.sql
+    dataset: marts.mart_revenue_daily
+    consumer: "Finance — Revenue Review"
+    daily_runs: 96
+    users: [dana.oyelaran@example.com, rowan.beck@example.com, priya.raghavan@example.com]
+
+  - file: authorisation_rate.sql
+    dataset: marts.mart_revenue_daily
+    consumer: "Finance — Revenue Review"
+    daily_runs: 84
+    users: [dana.oyelaran@example.com, rowan.beck@example.com]
+
+  - file: reconciliation_gap.sql
+    dataset: marts.mart_finance_reconciliation
+    consumer: "Finance — Revenue Review"
+    daily_runs: 72
+    users: [dana.oyelaran@example.com, rowan.beck@example.com]
+
+  - file: dispute_exposure.sql
+    dataset: marts.mart_transaction_enriched
+    consumer: "Finance — Revenue Review"
+    daily_runs: 64
+    users: [dana.oyelaran@example.com, amara.chen@example.com]
+
+  - file: merchant_revenue.sql
+    dataset: marts.mart_merchant_scorecard
+    consumer: "Merchant Operations"
+    daily_runs: 38
+    users: [tomas.lindqvist@example.com, ines.duarte@example.com]
+
+  - file: carrier_on_time.sql
+    dataset: marts.mart_logistics_sla
+    consumer: "Merchant Operations"
+    daily_runs: 24
+    users: [tomas.lindqvist@example.com, ines.duarte@example.com]
+
+  - file: funnel_conversion.sql
+    dataset: marts.mart_marketing_funnel
+    consumer: "Growth Funnel"
+    daily_runs: 41
+    users: [tomas.lindqvist@example.com, ines.duarte@example.com]
+
+  - file: zero_result_search.sql
+    dataset: marts.mart_marketing_funnel
+    consumer: "Growth Funnel"
+    daily_runs: 12
+    users: [ines.duarte@example.com]
+
+  - file: mrr_by_plan.sql
+    dataset: marts.mart_subscription_health
+    consumer: "Subscription & Retention"
+    daily_runs: 19
+    users: [dana.oyelaran@example.com, rowan.beck@example.com]
+
+  - file: customer_value.sql
+    dataset: marts.mart_customer_360
+    consumer: "Subscription & Retention"
+    daily_runs: 15
+    users: [dana.oyelaran@example.com]
+
+  # Ad hoc traffic. Lower volume, and concentrated on very few people — which is exactly
+  # the pattern that makes an asset quietly load-bearing.
+  - file: fraud_feature_freshness.sql
+    dataset: ml.feature_customer_risk
+    consumer: ad-hoc / ml-platform
+    daily_runs: 11
+    users: [amara.chen@example.com]
+
+  - file: velocity_outliers.sql
+    dataset: ml.feature_txn_velocity
+    consumer: ad-hoc / ml-platform
+    daily_runs: 7
+    users: [amara.chen@example.com]
+
+  - file: merchant_risk_review.sql
+    dataset: ml.feature_merchant_risk
+    consumer: ad-hoc / risk-operations
+    daily_runs: 3
+    users: [amara.chen@example.com, ines.duarte@example.com]
+
+  - file: order_investigation.sql
+    dataset: intermediate.int_orders_enriched
+    consumer: ad-hoc / analytics-engineering
+    daily_runs: 6
+    users: [marcus.webb@example.com, priya.raghavan@example.com]
+
+  - file: support_load_review.sql
+    dataset: intermediate.int_customer_support_load
+    consumer: ad-hoc / support-operations
+    daily_runs: 2
+    users: [tomas.lindqvist@example.com]

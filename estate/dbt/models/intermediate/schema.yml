@@ -1,0 +1,74 @@
+version: 2
+
+# Intermediate models are tables, built once nightly after the sources land. Being tables
+# they keep serving the previous build when an upstream stalls, which is why Twin does not
+# treat an upstream outage as instant death for everything below it.
+
+models:
+  - name: int_orders_enriched
+    description: >
+      Orders with line detail rolled up and amounts converted to USD on the order date.
+    meta: {owner: marcus.webb@example.com, team: analytics-engineering, refresh_cadence: daily_0700, sla_hours: 8, criticality_tier: tier1}
+    columns:
+      - name: order_id
+        tests: [unique, not_null]
+      - name: net_amount_usd
+        tests: [not_null]
+
+  - name: int_payment_attempts
+    description: >
+      Payment attempts with refund and dispute outcomes attached, and a net settled value
+      that excludes refunded and disputed amounts.
+    meta: {owner: marcus.webb@example.com, team: analytics-engineering, refresh_cadence: daily_0700, sla_hours: 8, criticality_tier: tier1}
+    columns:
+      - name: payment_id
+        tests: [unique, not_null]
+
+  - name: int_customer_lifetime
+    description: Per-customer order history, retaining customers who never ordered.
+    meta: {owner: dana.oyelaran@example.com, team: finance-data, refresh_cadence: daily_0700, sla_hours: 8, criticality_tier: tier2}
+    columns:
+      - name: customer_id
+        tests: [unique, not_null]
+
+  - name: int_session_device
+    description: >
+      Sessions joined to their originating device and that device's authentication
+      history. The join that makes device-level risk scoring possible.
+    meta: {owner: amara.chen@example.com, team: ml-platform, refresh_cadence: hourly, sla_hours: 6, criticality_tier: tier1}
+    columns:
+      - name: session_id
+        tests: [unique, not_null]
+
+  - name: int_merchant_daily
+    description: Merchant activity per day, the grain merchant reporting builds on.
+    meta: {owner: dana.oyelaran@example.com, team: finance-data, refresh_cadence: daily_0700, sla_hours: 8, criticality_tier: tier2}
+
+  - name: int_promotion_impact
+    description: Promotion redemptions attributed to the orders they discounted.
+    meta: {owner: dana.oyelaran@example.com, team: finance-data, refresh_cadence: daily_0700, sla_hours: 12, criticality_tier: tier3}
+    columns:
+      - name: promotion_id
+        tests: [unique, not_null]
+
+  - name: int_shipment_performance
+    description: Shipments measured against the carrier's promised transit days.
+    meta: {owner: dana.oyelaran@example.com, team: finance-data, refresh_cadence: daily_0700, sla_hours: 8, criticality_tier: tier3}
+    columns:
+      - name: shipment_id
+        tests: [unique, not_null]
+
+  - name: int_funnel_steps
+    description: >
+      Session-grain funnel rollup. What each session reached, and where it stopped.
+    meta: {owner: tomas.lindqvist@example.com, team: growth-analytics, refresh_cadence: hourly, sla_hours: 6, criticality_tier: tier2}
+    columns:
+      - name: session_id
+        tests: [unique, not_null]
+
+  - name: int_customer_support_load
+    description: Support contact volume, resolution time and satisfaction per customer.
+    meta: {owner: tomas.lindqvist@example.com, team: growth-analytics, refresh_cadence: daily_0700, sla_hours: 12, criticality_tier: tier3}
+    columns:
+      - name: customer_id
+        tests: [unique, not_null]

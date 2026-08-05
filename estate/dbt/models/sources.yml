@@ -1,0 +1,116 @@
+version: 2
+
+# Source declarations for the two systems that land in the warehouse.
+#
+# The `meta` blocks are not decoration. DataHub ingestion carries them through to entity
+# properties, and Stage 2 propagation reads them back:
+#
+#   refresh_cadence   how often fresh data is expected to land
+#   sla_hours         how long the asset may go stale before it is considered broken.
+#                     This is the clock that drives the failure timeline — a downstream
+#                     asset breaks when its own SLA elapses without fresh input, not the
+#                     instant its upstream does.
+#   replicated        whether the source has a standby it can be served from
+#   criticality_tier  the operator's own declared importance, used as one input to
+#                     scoring and deliberately not the same thing as Twin's own verdict
+
+sources:
+  - name: raw_pg
+    description: >
+      Nightly snapshot of the transactional PostgreSQL replica. One batch per night,
+      landing between 05:00 and 06:00 UTC.
+    database: warehouse
+    schema: raw_pg
+    tables:
+      - name: customers
+        description: Customer accounts, including soft-deleted rows.
+        meta: {owner: priya.raghavan@example.com, team: data-platform, refresh_cadence: daily_0500, sla_hours: 6, replicated: true, criticality_tier: tier1}
+      - name: addresses
+        description: Shipping and billing addresses, one to three per customer.
+        meta: {owner: priya.raghavan@example.com, team: data-platform, refresh_cadence: daily_0500, sla_hours: 6, replicated: true, criticality_tier: tier3}
+      - name: product_categories
+        description: Category tree. Small reference table, replicated on request only.
+        meta: {owner: priya.raghavan@example.com, team: data-platform, refresh_cadence: daily_0500, sla_hours: 12, replicated: false, criticality_tier: tier3}
+      - name: products
+        description: Product catalogue with list prices in the merchant's currency.
+        meta: {owner: priya.raghavan@example.com, team: data-platform, refresh_cadence: daily_0500, sla_hours: 6, replicated: true, criticality_tier: tier2}
+      - name: merchants
+        description: Marketplace sellers and their settlement currency.
+        meta: {owner: priya.raghavan@example.com, team: data-platform, refresh_cadence: daily_0500, sla_hours: 6, replicated: true, criticality_tier: tier2}
+      - name: orders
+        description: Order headers.
+        meta: {owner: priya.raghavan@example.com, team: data-platform, refresh_cadence: daily_0500, sla_hours: 6, replicated: true, criticality_tier: tier1}
+      - name: order_items
+        description: Order lines.
+        meta: {owner: priya.raghavan@example.com, team: data-platform, refresh_cadence: daily_0500, sla_hours: 6, replicated: true, criticality_tier: tier1}
+      - name: payment_methods
+        description: Stored payment instruments.
+        meta: {owner: priya.raghavan@example.com, team: data-platform, refresh_cadence: daily_0500, sla_hours: 6, replicated: true, criticality_tier: tier2}
+      - name: payments
+        description: Payment attempts including declines and retries.
+        meta: {owner: priya.raghavan@example.com, team: data-platform, refresh_cadence: daily_0500, sla_hours: 6, replicated: true, criticality_tier: tier1}
+      - name: refunds
+        description: Full and partial refunds against settled payments.
+        meta: {owner: priya.raghavan@example.com, team: data-platform, refresh_cadence: daily_0500, sla_hours: 6, replicated: true, criticality_tier: tier2}
+      - name: chargebacks
+        description: Disputed payments and their liability assignment.
+        meta: {owner: priya.raghavan@example.com, team: data-platform, refresh_cadence: daily_0500, sla_hours: 6, replicated: true, criticality_tier: tier2}
+      - name: carriers
+        description: Shipping carriers and promised transit days. Static reference data.
+        meta: {owner: priya.raghavan@example.com, team: data-platform, refresh_cadence: daily_0500, sla_hours: 24, replicated: false, criticality_tier: tier3}
+      - name: shipments
+        description: Shipment records with despatch and delivery timestamps.
+        meta: {owner: priya.raghavan@example.com, team: data-platform, refresh_cadence: daily_0500, sla_hours: 6, replicated: true, criticality_tier: tier2}
+      - name: promotions
+        description: Promotional campaigns and their budgets.
+        meta: {owner: priya.raghavan@example.com, team: data-platform, refresh_cadence: daily_0500, sla_hours: 12, replicated: true, criticality_tier: tier3}
+      - name: promotion_redemptions
+        description: Promotion applications against orders.
+        meta: {owner: priya.raghavan@example.com, team: data-platform, refresh_cadence: daily_0500, sla_hours: 12, replicated: true, criticality_tier: tier3}
+      - name: subscriptions
+        description: Recurring plans and their MRR contribution.
+        meta: {owner: priya.raghavan@example.com, team: data-platform, refresh_cadence: daily_0500, sla_hours: 6, replicated: true, criticality_tier: tier2}
+      - name: support_tickets
+        description: Customer support contacts, optionally linked to an order.
+        meta: {owner: priya.raghavan@example.com, team: data-platform, refresh_cadence: daily_0500, sla_hours: 12, replicated: true, criticality_tier: tier3}
+      - name: fx_rates
+        description: >
+          Daily USD-base currency rates from the ECB feed. Single-region ingestion.
+        meta: {owner: priya.raghavan@example.com, team: data-platform, refresh_cadence: daily_0500, sla_hours: 6, replicated: false, criticality_tier: tier2}
+
+  - name: raw_events
+    description: >
+      Continuously landing event stream. Producers emit epoch milliseconds, events arrive
+      out of order, and a small share of sessions never emit a terminating event.
+    database: warehouse
+    schema: raw_events
+    tables:
+      - name: page_views
+        description: Page view events.
+        meta: {refresh_cadence: continuous, sla_hours: 2, replicated: true, criticality_tier: tier3}
+      - name: product_views
+        description: Product detail page views with dwell time.
+        meta: {refresh_cadence: continuous, sla_hours: 2, replicated: true, criticality_tier: tier3}
+      - name: add_to_cart
+        description: Cart addition events.
+        meta: {refresh_cadence: continuous, sla_hours: 2, replicated: true, criticality_tier: tier3}
+      - name: checkout_steps
+        description: Checkout funnel step transitions and abandonment.
+        meta: {refresh_cadence: continuous, sla_hours: 2, replicated: true, criticality_tier: tier2}
+      - name: app_sessions
+        description: >
+          Mobile and web session envelopes. Sessions are only closed once a terminating
+          event arrives, so the table is considered fresh on a relaxed window.
+        meta: {refresh_cadence: continuous, sla_hours: 24, replicated: true, criticality_tier: tier2}
+      - name: device_fingerprints
+        description: Device identity and trust scoring.
+        meta: {owner: amara.chen@example.com, team: ml-platform, refresh_cadence: continuous, sla_hours: 4, replicated: true, criticality_tier: tier2}
+      - name: search_queries
+        description: On-site search events and result counts.
+        meta: {refresh_cadence: continuous, sla_hours: 2, replicated: true, criticality_tier: tier3}
+      - name: email_events
+        description: Lifecycle and campaign email engagement.
+        meta: {refresh_cadence: continuous, sla_hours: 4, replicated: true, criticality_tier: tier3}
+      - name: auth_events
+        description: Authentication attempts, including failures and MFA challenges.
+        meta: {owner: amara.chen@example.com, team: ml-platform, refresh_cadence: continuous, sla_hours: 2, replicated: true, criticality_tier: tier1}

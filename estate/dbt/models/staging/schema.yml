@@ -1,0 +1,157 @@
+version: 2
+
+# Staging models are views. That is a deliberate choice with a consequence Twin models:
+# a view has nothing of its own to serve, so it fails the moment its source stops
+# refreshing, whereas the tables above it keep returning yesterday's rows.
+
+models:
+  - name: stg_customers
+    description: Active customer accounts with soft-deleted rows removed.
+    meta: {owner: priya.raghavan@example.com, team: data-platform, refresh_cadence: daily_0530, sla_hours: 7, criticality_tier: tier1}
+    columns:
+      - name: customer_id
+        tests: [unique, not_null]
+      - name: email
+        tests: [not_null]
+
+  - name: stg_addresses
+    description: Customer addresses with the default shipping address flagged.
+    meta: {owner: marcus.webb@example.com, team: analytics-engineering, refresh_cadence: daily_0530, sla_hours: 7, criticality_tier: tier3}
+    columns:
+      - name: address_id
+        tests: [unique, not_null]
+
+  - name: stg_products
+    description: Product catalogue in the merchant's own currency.
+    meta: {owner: marcus.webb@example.com, team: analytics-engineering, refresh_cadence: daily_0530, sla_hours: 7, criticality_tier: tier2}
+    columns:
+      - name: product_id
+        tests: [unique, not_null]
+
+  - name: stg_merchants
+    description: Marketplace sellers, including suspended ones.
+    meta: {owner: marcus.webb@example.com, team: analytics-engineering, refresh_cadence: daily_0530, sla_hours: 7, criticality_tier: tier2}
+    columns:
+      - name: merchant_id
+        tests: [unique, not_null]
+
+  - name: stg_orders
+    description: Order headers with net amount resolved.
+    meta: {owner: priya.raghavan@example.com, team: data-platform, refresh_cadence: daily_0530, sla_hours: 7, criticality_tier: tier1}
+    columns:
+      - name: order_id
+        tests: [unique, not_null]
+      - name: customer_id
+        tests: [not_null]
+      - name: status
+        tests:
+          - accepted_values:
+              values: ["completed", "cancelled", "pending", "returned"]
+
+  - name: stg_order_items
+    description: Order lines with line totals.
+    meta: {owner: marcus.webb@example.com, team: analytics-engineering, refresh_cadence: daily_0530, sla_hours: 7, criticality_tier: tier1}
+    columns:
+      - name: order_item_id
+        tests: [unique, not_null]
+
+  - name: stg_payments
+    description: Payment attempts including declines and retries.
+    meta: {owner: marcus.webb@example.com, team: analytics-engineering, refresh_cadence: daily_0530, sla_hours: 7, criticality_tier: tier1}
+    columns:
+      - name: payment_id
+        tests: [unique, not_null]
+      - name: status
+        tests:
+          - accepted_values:
+              values: ["settled", "declined"]
+
+  - name: stg_refunds
+    description: Refunds against settled payments.
+    meta: {owner: marcus.webb@example.com, team: analytics-engineering, refresh_cadence: daily_0530, sla_hours: 7, criticality_tier: tier2}
+    columns:
+      - name: refund_id
+        tests: [unique, not_null]
+
+  - name: stg_chargebacks
+    description: Payment disputes with open and fraud flags resolved.
+    meta: {owner: marcus.webb@example.com, team: analytics-engineering, refresh_cadence: daily_0530, sla_hours: 7, criticality_tier: tier2}
+    columns:
+      - name: chargeback_id
+        tests: [unique, not_null]
+
+  - name: stg_shipments
+    description: Shipments with transit time resolved for delivered parcels.
+    meta: {owner: marcus.webb@example.com, team: analytics-engineering, refresh_cadence: daily_0530, sla_hours: 7, criticality_tier: tier2}
+    columns:
+      - name: shipment_id
+        tests: [unique, not_null]
+
+  - name: stg_promotions
+    description: Promotional campaigns with their active window.
+    meta: {owner: marcus.webb@example.com, team: analytics-engineering, refresh_cadence: daily_0530, sla_hours: 13, criticality_tier: tier3}
+    columns:
+      - name: promotion_id
+        tests: [unique, not_null]
+
+  - name: stg_subscriptions
+    description: Recurring plans with MRR normalised to a monthly figure.
+    meta: {owner: marcus.webb@example.com, team: analytics-engineering, refresh_cadence: daily_0530, sla_hours: 7, criticality_tier: tier2}
+    columns:
+      - name: subscription_id
+        tests: [unique, not_null]
+
+  - name: stg_fx_rates
+    description: >
+      Daily USD-base currency rates with an identity row for USD. Every currency
+      conversion in the estate resolves through this model.
+    meta: {owner: amara.chen@example.com, team: ml-platform, refresh_cadence: daily_0530, sla_hours: 7, criticality_tier: tier2}
+    columns:
+      - name: rate
+        tests: [not_null]
+      - name: quote_currency
+        tests: [not_null]
+
+  - name: stg_page_views
+    description: Page views with epoch milliseconds converted and utm_source normalised.
+    meta: {owner: tomas.lindqvist@example.com, team: growth-analytics, refresh_cadence: continuous, sla_hours: 3, criticality_tier: tier3}
+    columns:
+      - name: event_id
+        tests: [unique, not_null]
+
+  - name: stg_product_views
+    description: Product detail views with an engagement flag.
+    meta: {owner: tomas.lindqvist@example.com, team: growth-analytics, refresh_cadence: continuous, sla_hours: 3, criticality_tier: tier3}
+    columns:
+      - name: event_id
+        tests: [unique, not_null]
+
+  - name: stg_app_sessions
+    description: >
+      Session envelopes. Unterminated sessions are retained with a null duration rather
+      than dropped.
+    meta: {owner: tomas.lindqvist@example.com, team: growth-analytics, refresh_cadence: continuous, sla_hours: 24, criticality_tier: tier2}
+    columns:
+      - name: session_id
+        tests: [unique, not_null]
+
+  - name: stg_device_fingerprints
+    description: Device identity and trust scoring.
+    meta: {refresh_cadence: continuous, sla_hours: 5, criticality_tier: tier2}
+    columns:
+      - name: device_id
+        tests: [unique, not_null]
+
+  - name: stg_auth_events
+    description: Authentication attempts with failure flags resolved.
+    meta: {refresh_cadence: continuous, sla_hours: 3, criticality_tier: tier1}
+    columns:
+      - name: event_id
+        tests: [unique, not_null]
+
+  - name: stg_search_queries
+    description: On-site search events with zero-result flag.
+    meta: {owner: tomas.lindqvist@example.com, team: growth-analytics, refresh_cadence: continuous, sla_hours: 3, criticality_tier: tier3}
+    columns:
+      - name: event_id
+        tests: [unique, not_null]

@@ -1,0 +1,20 @@
+# dbt connects as the `twin` role, which owns every estate object.
+#
+# Note what is deliberately absent: Twin's own pipeline never uses this profile. Stage 1
+# and Stage 3 read as twin_reader, and Stage 4 executes as twin_shadow, which owns nothing
+# here and therefore cannot alter or drop anything dbt built. See docs/SAFETY.md.
+
+estate:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('WAREHOUSE_HOST', 'warehouse') }}"
+      port: "{{ env_var('WAREHOUSE_PORT', '5432') | int }}"
+      dbname: "{{ env_var('WAREHOUSE_DB', 'warehouse') }}"
+      user: "{{ env_var('WAREHOUSE_USER', 'twin') }}"
+      password: "{{ env_var('WAREHOUSE_PASSWORD', 'twin') }}"
+      schema: public
+      threads: 4
+      keepalives_idle: 0
+      connect_timeout: 10

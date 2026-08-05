@@ -1,0 +1,105 @@
+version: 2
+
+# Marts are the estate's published surface: dashboards and the ML feature layer read from
+# here and nowhere below it.
+#
+# Two models declare a fallback_source. That is not decoration either — it is a real
+# manual export that the consuming team can work from for a day or so if the pipeline
+# stalls, and Stage 2 treats it as a genuine propagation stop rather than pretending the
+# downstream dies instantly.
+
+models:
+  - name: mart_revenue_daily
+    description: >
+      Daily revenue in USD on gross, net and settled bases, with authorisation rate.
+    meta:
+      owner: dana.oyelaran@example.com
+      team: finance-data
+      refresh_cadence: daily_0800
+      sla_hours: 10
+      criticality_tier: tier1
+      fallback_source: finance_ledger_export
+
+  - name: mart_transaction_enriched
+    description: >
+      Payment-attempt grain enriched with order context and the customer's device
+      behaviour. Device signal is joined at customer grain because payments carry no
+      session identifier.
+    meta:
+      owner: dana.oyelaran@example.com
+      team: finance-data
+      refresh_cadence: daily_0800
+      sla_hours: 10
+      criticality_tier: tier1
+    columns:
+      - name: payment_id
+        tests: [unique, not_null]
+
+  - name: mart_finance_reconciliation
+    description: >
+      Daily reconciliation between ordered and settled value per processor. The
+      unreconciled gap is the figure finance chases each morning.
+    meta:
+      owner: dana.oyelaran@example.com
+      team: finance-data
+      refresh_cadence: daily_0800
+      sla_hours: 10
+      criticality_tier: tier1
+      fallback_source: processor_settlement_file
+
+  - name: mart_customer_360
+    description: One row per customer covering value, support burden and subscription state.
+    meta:
+      owner: dana.oyelaran@example.com
+      team: finance-data
+      refresh_cadence: daily_0800
+      sla_hours: 10
+      criticality_tier: tier2
+    columns:
+      - name: customer_id
+        tests: [unique, not_null]
+
+  - name: mart_merchant_scorecard
+    description: Merchant performance across revenue and fulfilment.
+    meta:
+      owner: dana.oyelaran@example.com
+      team: finance-data
+      refresh_cadence: daily_0800
+      sla_hours: 10
+      criticality_tier: tier2
+    columns:
+      - name: merchant_id
+        tests: [unique, not_null]
+
+  - name: mart_subscription_health
+    description: Subscription book by plan and billing interval, with MRR in USD.
+    meta:
+      owner: dana.oyelaran@example.com
+      team: finance-data
+      refresh_cadence: daily_0800
+      sla_hours: 12
+      criticality_tier: tier2
+
+  - name: mart_marketing_funnel
+    description: Daily acquisition funnel at session grain with search behaviour.
+    meta:
+      owner: tomas.lindqvist@example.com
+      team: growth-analytics
+      refresh_cadence: daily_0800
+      sla_hours: 12
+      criticality_tier: tier2
+    columns:
+      - name: session_date
+        tests: [unique, not_null]
+
+  - name: mart_logistics_sla
+    description: Carrier delivery performance against promised transit days.
+    meta:
+      owner: tomas.lindqvist@example.com
+      team: growth-analytics
+      refresh_cadence: daily_0800
+      sla_hours: 12
+      criticality_tier: tier3
+    columns:
+      - name: carrier_id
+        tests: [unique, not_null]

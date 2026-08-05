@@ -1,0 +1,52 @@
+# Ingests the dbt project: lineage, column-level lineage, ownership and the SLA metadata
+# that Stage 2's propagation model runs on.
+#
+# Column-level lineage is the point of this recipe. Without it, a dropped column looks
+# like a whole-table failure and Twin would over-predict every schema-break scenario.
+# It requires infer_dbt_schemas, so both flags are on together.
+
+source:
+  type: dbt
+  config:
+    manifest_path: /app/estate/dbt/target/manifest.json
+    catalog_path: /app/estate/dbt/target/catalog.json
+    run_results_paths:
+      - /app/estate/dbt/target/run_results.json
+
+    target_platform: postgres
+    include_database_name: true
+
+    infer_dbt_schemas: true
+    include_column_lineage: true
+    include_compiled_code: true
+
+    entities_enabled:
+      # Test results are ingested: a model whose tests are failing is a different kind of
+      # fragile from one that is merely central, and Stage 3 reads both.
+      test_results: "YES"
+      test_definitions: "YES"
+      seeds: "NO"
+      snapshots: "NO"
+
+    # Ownership lives in each model's `meta.owner`, as an email address.
+    enable_owner_extraction: true
+    enable_meta_mapping: true
+    strip_user_ids_from_email: false
+
+    meta_mapping:
+      team:
+        match: ".*"
+        operation: "add_tag"
+        config:
+          tag: "team:{{ $match }}"
+      criticality_tier:
+        match: ".*"
+        operation: "add_tag"
+        config:
+          tag: "tier:{{ $match }}"
+
+sink:
+  type: datahub-rest
+  config:
+    server: "${DATAHUB_GMS_URL:-http://datahub-gms:8080}"
+    token: "${DATAHUB_GMS_TOKEN:-}"

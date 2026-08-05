@@ -1,0 +1,39 @@
+# Catalogues the physical warehouse: every table and view across the six estate schemas.
+#
+# This recipe and the dbt recipe are complementary, and both are needed. Postgres knows
+# what physically exists and what columns it really has; dbt knows how it was built, who
+# owns it, and which column came from which. DataHub links the two as siblings, which is
+# the standard deployment shape for a dbt-on-warehouse estate.
+#
+# Profiling is off. It would add minutes to `make estate` and Twin scores fragility from
+# structure, ownership and query volume — not from column histograms.
+
+source:
+  type: postgres
+  config:
+    host_port: "${WAREHOUSE_HOST:-warehouse}:${WAREHOUSE_PORT:-5432}"
+    database: "${WAREHOUSE_DB:-warehouse}"
+    username: "${WAREHOUSE_USER:-twin}"
+    password: "${WAREHOUSE_PASSWORD:-twin}"
+
+    schema_pattern:
+      allow:
+        - "^raw_pg$"
+        - "^raw_events$"
+        - "^staging$"
+        - "^intermediate$"
+        - "^marts$"
+        - "^ml$"
+
+    include_tables: true
+    include_views: true
+    include_view_lineage: false
+
+    profiling:
+      enabled: false
+
+sink:
+  type: datahub-rest
+  config:
+    server: "${DATAHUB_GMS_URL:-http://datahub-gms:8080}"
+    token: "${DATAHUB_GMS_TOKEN:-}"

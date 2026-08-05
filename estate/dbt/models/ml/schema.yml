@@ -1,0 +1,51 @@
+version: 2
+
+# The feature layer. These tables are read at scoring time by a model serving live
+# traffic, which is why their declared SLA is an hour rather than the estate's usual
+# overnight window: a stale feature is not a late report, it is a wrong decision on a
+# real transaction.
+
+models:
+  - name: feature_customer_risk
+    description: >
+      Customer-grain risk features: device spread, authentication failures, account age
+      and ordering history.
+    meta:
+      owner: amara.chen@example.com
+      team: ml-platform
+      refresh_cadence: hourly
+      sla_hours: 1
+      criticality_tier: tier1
+      feature_set: fraud_features_v3
+    columns:
+      - name: customer_id
+        tests: [unique, not_null]
+
+  - name: feature_merchant_risk
+    description: >
+      Merchant-grain risk features. Dispute and refund intensity relative to volume,
+      rather than absolute counts.
+    meta:
+      owner: amara.chen@example.com
+      team: ml-platform
+      refresh_cadence: hourly
+      sla_hours: 1
+      criticality_tier: tier1
+      feature_set: fraud_features_v3
+    columns:
+      - name: merchant_id
+        tests: [unique, not_null]
+
+  - name: feature_txn_velocity
+    description: >
+      Transaction velocity at customer grain, including peak-to-mean attempt ratio.
+    meta:
+      owner: amara.chen@example.com
+      team: ml-platform
+      refresh_cadence: hourly
+      sla_hours: 1
+      criticality_tier: tier1
+      feature_set: fraud_features_v3
+    columns:
+      - name: customer_id
+        tests: [unique, not_null]

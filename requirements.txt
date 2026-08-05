@@ -1,0 +1,27 @@
+# Direct dependencies only, pinned. Twin's scoring output must be byte-identical across
+# runs; a floating dependency that changes traversal or serialisation order breaks that.
+# Transitive versions are left to the resolver — see docker/twin.Dockerfile for the image
+# these are installed into.
+
+# Warehouse + estate build
+dbt-core==1.12.0
+dbt-postgres==1.11.0
+
+# Twin's own execution layer (Stage 4) talks to Postgres directly rather than through dbt,
+# because it needs to run statements dbt has no concept of (revoking grants, dropping
+# columns) and to capture the real error the warehouse returns.
+psycopg[binary]==3.2.12
+
+# DataHub: ingestion sources for the estate, SDK for entity emission
+acryl-datahub[datahub-rest,dbt,postgres]==1.7.0
+
+# The official DataHub MCP server. Stage 1 reads the estate exclusively through this.
+mcp-server-datahub==0.6.0
+
+# Estate generation and pipeline internals
+pyyaml==6.0.3
+networkx==3.6.1
+jinja2==3.1.6
+
+# Testing
+pytest==8.4.2

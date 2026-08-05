@@ -1,0 +1,7 @@
+# Twin is run as modules from the repository root (`python -m estate.seed.generate`), not
+# installed as a package. This file exists to configure the tooling, not to build a wheel.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q --strict-markers"

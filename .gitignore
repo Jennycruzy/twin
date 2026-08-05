@@ -1,0 +1,28 @@
+.env
+
+# Stage 1 caches the materialised estate graph here, keyed by graph fingerprint.
+.twin/
+
+# dbt build output. Committed artifacts live in examples/, not here.
+estate/dbt/target/
+estate/dbt/dbt_packages/
+estate/dbt/logs/
+.user.yml
+
+# Generated estate data, regenerated deterministically by `make estate`.
+estate/seed/out/
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Reports are regenerated on every run. Committed sample outputs live in examples/.
+reports/
+
+.DS_Store
+
+# Internal build-planning notes, not part of the deliverable.
+HANDOFF.md

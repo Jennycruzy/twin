@@ -1,0 +1,325 @@
+# Twin — local stack.
+#
+# Three groups of services:
+#   1. DataHub (metadata platform)  — gms, frontend, opensearch, kafka, mysql
+#   2. warehouse (Postgres)         — the analytical warehouse the demo estate is built in
+#   3. twin (tools image)           — dbt, DataHub ingestion, and the Twin pipeline itself
+#
+# The DataHub services are derived from the upstream quickstart compose at tag v1.7.0
+# (datahub-project/datahub:docker/quickstart/docker-compose.quickstart-profile.yml).
+# Three deliberate divergences from upstream, all to fit a small host:
+#
+#   * The datahub-actions container is omitted. It exists to run DataHub's action
+#     framework (Slack/Teams notifications, custom event hooks). Twin does not use it
+#     and it costs ~350MB.
+#   * Every container has an explicit mem_limit and JVM heap. Upstream leaves these
+#     unbounded, which on a 8GB host lets OpenSearch and GMS crowd out everything else.
+#   * Only the frontend and GMS publish ports, in a Twin-specific range (see .env), so
+#     the stack cannot collide with anything else already running on the host.
+#
+# Metadata service auth is disabled, matching upstream quickstart. This keeps setup to a
+# single command for a judge; see docs/SAFETY.md for what that does and does not expose.
+
+name: twin
+
+x-datahub-common: &datahub-common
+  restart: unless-stopped
+  networks: [twin]
+
+services:
+  # ---------------------------------------------------------------- DataHub storage
+
+  mysql:
+    <<: *datahub-common
+    image: mysql:8.2
+    hostname: mysql
+    mem_limit: 512m
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_bin
+      - --default-authentication-plugin=caching_sha2_password
+      - --innodb-buffer-pool-size=128M
+    environment:
+      MYSQL_DATABASE: datahub
+      MYSQL_USER: datahub
+      MYSQL_PASSWORD: datahub
+      MYSQL_ROOT_PASSWORD: datahub
+      MYSQL_ROOT_HOST: "%"
+    volumes:
+      - mysqldata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h mysql -u $$MYSQL_USER --password=$$MYSQL_PASSWORD"]
+      interval: 2s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  opensearch:
+    <<: *datahub-common
+    image: opensearchproject/opensearch:2.19.3
+    hostname: search
+    mem_limit: 1200m
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      # Upstream ships -Xms768m -Xmx1024m. Halved: the demo estate is ~70 entities,
+      # which indexes comfortably in 512m.
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m -Dlog4j2.formatMsgNoLookups=true
+    volumes:
+      - osdata:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS --fail 'http://search:9200/_cluster/health?wait_for_status=yellow&timeout=0s'"]
+      interval: 5s
+      timeout: 15s
+      retries: 12
+      start_period: 60s
+
+  broker:
+    <<: *datahub-common
+    image: confluentinc/cp-kafka:8.2.2
+    hostname: broker
+    mem_limit: 1024m
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_BROKER_ID: 1
+      KAFKA_PROCESS_ROLES: controller, broker
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@broker:39092
+      KAFKA_LISTENERS: BROKER://broker:29092,CONTROLLER://broker:39092
+      KAFKA_ADVERTISED_LISTENERS: BROKER://broker:29092
+      KAFKA_INTER_BROKER_LISTENER_NAME: BROKER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,BROKER:PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_CONFLUENT_SUPPORT_METRICS_ENABLE: "false"
+      KAFKA_MESSAGE_MAX_BYTES: 5242880
+      KAFKA_MAX_MESSAGE_BYTES: 5242880
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+      KAFKA_LOG4J_LOGGERS: org.apache.kafka.image.loader.MetadataLoader=WARN
+    command:
+      - /bin/bash
+      - -c
+      - |
+        cluster_id_file=/var/lib/kafka/data/clusterID
+        if [ ! -f "$$cluster_id_file" ]; then
+          /bin/kafka-storage random-uuid > "$$cluster_id_file"
+          kafka-storage format --ignore-formatted -t "$$(cat $$cluster_id_file)" -c /etc/kafka/kafka.properties
+        fi
+        export CLUSTER_ID="$$(cat $$cluster_id_file)"
+        /etc/confluent/docker/run
+    volumes:
+      - brokerdata:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server broker:29092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+
+  # ---------------------------------------------------------------- DataHub services
+
+  # Runs schema migrations and pre-creates Kafka topics, then exits. GMS and the
+  # frontend both wait for it to complete successfully.
+  system-update:
+    <<: *datahub-common
+    image: acryldata/datahub-upgrade:${DATAHUB_VERSION:-v1.7.0}
+    hostname: datahub-system-update
+    mem_limit: 1024m
+    restart: "no"
+    command: ["-u", "SystemUpdate"]
+    depends_on:
+      mysql: {condition: service_healthy}
+      opensearch: {condition: service_healthy}
+      broker: {condition: service_healthy}
+    environment:
+      <<: &datahub-backend-env
+        EBEAN_DATASOURCE_USERNAME: root
+        EBEAN_DATASOURCE_PASSWORD: datahub
+        EBEAN_DATASOURCE_HOST: mysql:3306
+        EBEAN_DATASOURCE_URL: jdbc:mysql://mysql:3306/datahub?verifyServerCertificate=false&useSSL=true&useUnicode=yes&characterEncoding=UTF-8&enabledTLSProtocols=TLSv1.2
+        EBEAN_DATASOURCE_DRIVER: com.mysql.jdbc.Driver
+        ELASTICSEARCH_HOST: search
+        ELASTICSEARCH_PORT: "9200"
+        ELASTICSEARCH_PROTOCOL: http
+        ELASTICSEARCH_USE_SSL: "false"
+        ELASTICSEARCH_IMPLEMENTATION: opensearch
+        GRAPH_SERVICE_IMPL: elasticsearch
+        KAFKA_BOOTSTRAP_SERVER: broker:29092
+        KAFKA_SCHEMAREGISTRY_URL: http://datahub-gms:8080/schema-registry/api/
+        SCHEMA_REGISTRY_TYPE: INTERNAL
+        USE_CONFLUENT_SCHEMA_REGISTRY: "false"
+        ENTITY_REGISTRY_CONFIG_PATH: /datahub/datahub-gms/resources/entity-registry.yml
+        ENTITY_VERSIONING_ENABLED: "true"
+        DATAHUB_TOKEN_SERVICE_SALT: ${DATAHUB_TOKEN_SERVICE_SALT:-YouKnowNothing}
+        DATAHUB_TOKEN_SERVICE_SIGNING_KEY: ${DATAHUB_TOKEN_SERVICE_SIGNING_KEY:-WnEdIeTG/VVCLQqGwC/BAkqyY0k+H8NEAtWGejrBI94=}
+        DATAHUB_TELEMETRY_ENABLED: "false"
+      DATAHUB_SQL_SETUP_ENABLED: "true"
+      DATAHUB_PRECREATE_TOPICS: "true"
+      SCHEMA_REGISTRY_SYSTEM_UPDATE: "true"
+      SPRING_KAFKA_PROPERTIES_AUTO_REGISTER_SCHEMAS: "true"
+      SPRING_KAFKA_PROPERTIES_USE_LATEST_VERSION: "true"
+      ELASTICSEARCH_INDEX_BUILDER_MAPPINGS_REINDEX: "true"
+      ELASTICSEARCH_INDEX_BUILDER_SETTINGS_REINDEX: "true"
+      ELASTICSEARCH_INDEX_BUILDER_REFRESH_INTERVAL_SECONDS: "3"
+      ELASTICSEARCH_BUILD_INDICES_CLONE_INDICES: "false"
+      BACKFILL_BROWSE_PATHS_V2: "true"
+      REPROCESS_DEFAULT_BROWSE_PATHS_V2: "false"
+      CREATE_USER: "false"
+      PARTITIONS: "3"
+    volumes:
+      - plugins:/etc/datahub/plugins
+
+  datahub-gms:
+    <<: *datahub-common
+    image: acryldata/datahub-gms:${DATAHUB_VERSION:-v1.7.0}
+    hostname: datahub-gms
+    mem_limit: 1600m
+    depends_on:
+      system-update: {condition: service_completed_successfully}
+    environment:
+      <<: *datahub-backend-env
+      JAVA_OPTS: -Xms1g -Xmx1g
+      DATAHUB_SERVER_TYPE: quickstart
+      DATAHUB_OBJECT_STORAGE_URI: file:///tmp/datahub-object-storage
+      METADATA_SERVICE_AUTH_ENABLED: "false"
+      MAE_CONSUMER_ENABLED: "true"
+      MCE_CONSUMER_ENABLED: "true"
+      PE_CONSUMER_ENABLED: "true"
+      MCL_CONSUMER_BATCH_ENABLED: "true"
+      MCP_CONSUMER_BATCH_ENABLED: "true"
+      ENTITY_SERVICE_ENABLE_RETENTION: "true"
+      GRAPH_SERVICE_DIFF_MODE_ENABLED: "true"
+      ALTERNATE_MCP_VALIDATION: "true"
+      STRICT_URN_VALIDATION_ENABLED: "true"
+      CONFIG_ENTITY_REGISTRY_USE_OPTIMIZED_LOADING: "true"
+      ELASTICSEARCH_INDEX_BUILDER_MAPPINGS_REINDEX: "true"
+      ELASTICSEARCH_INDEX_BUILDER_SETTINGS_REINDEX: "true"
+      ELASTICSEARCH_LIMIT_RESULTS_STRICT: "true"
+      ES_BULK_REFRESH_POLICY: NONE
+      # Twin weights fragility by real query volume, which requires usage aggregation on.
+      USAGE_AGGREGATION_ENABLED: "true"
+      USAGE_AGGREGATION_ALIGNMENT_PERIOD_SECONDS: "3600"
+      USAGE_AGGREGATION_FLUSH_INTERVAL_SECONDS: "30"
+      UI_INGESTION_ENABLED: "false"
+      THEME_V2_DEFAULT: "true"
+      SHOW_HOME_PAGE_REDESIGN: "true"
+      EXTRACT_JAR_ENABLED: "true"
+    volumes:
+      - plugins:/etc/datahub/plugins
+      - searchcfg:/etc/datahub/search
+    ports:
+      - "${TWIN_GMS_PORT:-18080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sS --fail http://datahub-gms:8080/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 90s
+
+  datahub-frontend:
+    <<: *datahub-common
+    image: acryldata/datahub-frontend-react:${DATAHUB_VERSION:-v1.7.0}
+    hostname: datahub-frontend-react
+    mem_limit: 900m
+    depends_on:
+      datahub-gms: {condition: service_healthy}
+    environment:
+      DATAHUB_GMS_HOST: datahub-gms
+      DATAHUB_GMS_PORT: "8080"
+      DATAHUB_APP_VERSION: ${DATAHUB_VERSION:-v1.7.0}
+      DATAHUB_SECRET: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      DATAHUB_TRACKING_TOPIC: DataHubUsageEvent_v1
+      DATAHUB_PLAY_MEM_BUFFER_SIZE: 10MB
+      KAFKA_BOOTSTRAP_SERVER: broker:29092
+      ELASTIC_CLIENT_HOST: search
+      ELASTIC_CLIENT_PORT: "9200"
+      PLAY_HTTP_CONTEXT: /
+      THEME_V2_DEFAULT: "true"
+      JAVA_OPTS: >-
+        -Xms256m -Xmx512m
+        -Dhttp.port=9002
+        -Dconfig.file=datahub-frontend/conf/application.conf
+        -Djava.security.auth.login.config=datahub-frontend/conf/jaas.conf
+        -Dlogback.configurationFile=datahub-frontend/conf/logback.xml
+        -Dlogback.debug=false
+        -Dpidfile.path=/dev/null
+    volumes:
+      - plugins:/etc/datahub/plugins
+    ports:
+      - "${TWIN_FRONTEND_PORT:-19002}:9002"
+
+  # ---------------------------------------------------------------- warehouse
+
+  # The analytical warehouse. The demo estate is seeded here and built by dbt.
+  # Stage 4 clones affected slices into twin_shadow_* schemas in this same database
+  # and executes real faults against them; see docs/SAFETY.md.
+  warehouse:
+    <<: *datahub-common
+    image: postgres:16-alpine
+    hostname: warehouse
+    mem_limit: 640m
+    environment:
+      POSTGRES_DB: ${WAREHOUSE_DB:-warehouse}
+      POSTGRES_USER: ${WAREHOUSE_USER:-twin}
+      POSTGRES_PASSWORD: ${WAREHOUSE_PASSWORD:-twin}
+      # Deterministic collation: sort order affects dbt output, and Twin's scoring
+      # must be byte-identical across runs and across hosts.
+      POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+    command:
+      - postgres
+      - -c
+      - max_connections=64
+      - -c
+      - shared_buffers=128MB
+    volumes:
+      - warehousedata:/var/lib/postgresql/data
+      - ./estate/warehouse/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "${TWIN_WAREHOUSE_PORT:-15432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${WAREHOUSE_USER:-twin} -d ${WAREHOUSE_DB:-warehouse}"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  # ---------------------------------------------------------------- twin
+
+  # Not started by `docker compose up`; the Makefile invokes it per command with
+  # `docker compose run --rm twin ...`. Nothing about Twin is a long-running service.
+  twin:
+    build:
+      context: .
+      dockerfile: docker/twin.Dockerfile
+    image: twin:local
+    profiles: [tools]
+    networks: [twin]
+    mem_limit: 1024m
+    working_dir: /app
+    environment:
+      DATAHUB_GMS_URL: http://datahub-gms:8080
+      DATAHUB_GMS_TOKEN: ${DATAHUB_GMS_TOKEN:-}
+      WAREHOUSE_HOST: warehouse
+      WAREHOUSE_PORT: "5432"
+      WAREHOUSE_DB: ${WAREHOUSE_DB:-warehouse}
+      WAREHOUSE_USER: ${WAREHOUSE_USER:-twin}
+      WAREHOUSE_PASSWORD: ${WAREHOUSE_PASSWORD:-twin}
+      TWIN_SEED: ${TWIN_SEED:-20260805}
+      DBT_PROFILES_DIR: /app/estate/dbt
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - .:/app
+      - dbtcache:/app/estate/dbt/target
+
+networks:
+  twin:
+    name: twin
+
+volumes:
+  mysqldata:
+  osdata:
+  brokerdata:
+  plugins:
+  searchcfg:
+  warehousedata:
+  dbtcache:

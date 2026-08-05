@@ -1,0 +1,36 @@
+name: estate
+version: "1.0.0"
+config-version: 2
+
+profile: estate
+
+model-paths: ["models"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+# The estate is anchored to a fixed date rather than to now(), so that a build in six
+# months produces the same numbers as a build today. Twin's scoring must be reproducible,
+# and a model that filters on current_date would break that.
+vars:
+  estate_end_date: "2026-08-01"
+  estate_window_days: 365
+
+models:
+  estate:
+    # Materialisations are chosen for the shape of the estate, not uniformly. This matters
+    # to Twin: a view fails the instant its upstream does, whereas a table keeps serving
+    # yesterday's data and blunts propagation. Stage 2 models that difference.
+    staging:
+      +schema: staging
+      +materialized: view
+    intermediate:
+      +schema: intermediate
+      +materialized: table
+    marts:
+      +schema: marts
+      +materialized: table
+    ml:
+      +schema: ml
+      +materialized: table
