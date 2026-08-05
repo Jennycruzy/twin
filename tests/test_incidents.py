@@ -176,8 +176,16 @@ def test_an_unreadable_asset_is_reported_not_treated_as_clean():
     catalog.graph = FailingGraph()
     sweep = raised_on(catalog, ("urn:li:dataset:(x,y,PROD)",))
     assert sweep.found == ()
-    assert sweep.unreachable == ("urn:li:dataset:(x,y,PROD)",)
+    assert [urn for urn, _ in sweep.unreachable] == ["urn:li:dataset:(x,y,PROD)"]
     assert not sweep.is_complete
+
+
+def test_an_unreadable_asset_keeps_the_reason_it_could_not_be_read():
+    """The error is the evidence, the same way PostgreSQL's is in Stage 4."""
+    catalog = FakeCatalog()
+    catalog.graph = FailingGraph()
+    (_, error), = raised_on(catalog, ("urn:li:dataset:(x,y,PROD)",)).unreachable
+    assert "GMS is down" in error
 
 
 def test_a_truncated_page_is_reported_rather_than_silently_short():

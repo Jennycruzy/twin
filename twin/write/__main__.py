@@ -215,13 +215,6 @@ def _unwrite(graph: EstateGraph, purge: bool) -> int:
     print(f"\n  cleared Twin's values from {cleared} assets")
     if resolved:
         print(f"  resolved {resolved} incidents Twin raised (resolved, not deleted)")
-    if not sweep.is_complete:
-        # Said out loud. "No incidents found" and "could not look" must not print the same.
-        print(
-            f"  WARNING: {len(sweep.unreachable)} asset(s) could not be read and "
-            f"{len(sweep.truncated)} returned more incidents than were listed."
-        )
-        print("           Some of Twin's incidents may still be active. Re-run to retry.")
     if purge:
         print(f"  deleted {deleted} property definitions")
         print("  note: DataHub will not let these names be defined again on this stack.")
@@ -231,6 +224,22 @@ def _unwrite(graph: EstateGraph, purge: bool) -> int:
         print("  they appear on no asset; deleting them would burn the names for good.")
         print("  use --purge to delete them anyway, and read twin/write/catalog.py first.")
     print()
+
+    if not sweep.is_complete:
+        # An incomplete sweep is a failed unwrite, not a caveat on a successful one. The
+        # values were cleared, but Twin cannot say the incidents were, and a target that
+        # exits 0 here would let a nightly or a CI step move on as though it had.
+        print("  incident sweep did not complete:", file=sys.stderr)
+        for urn, error in sweep.unreachable[:5]:
+            print(f"    unreadable  {urn}\n                {error}", file=sys.stderr)
+        for urn in sweep.truncated[:5]:
+            print(f"    truncated   {urn} lists more incidents than were returned", file=sys.stderr)
+        print(
+            f"  {len(sweep.unreachable)} unreadable, {len(sweep.truncated)} truncated. "
+            "Some of Twin's incidents may still be active — re-run to retry.\n",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 

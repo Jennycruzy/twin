@@ -179,10 +179,15 @@ class IncidentSweep:
     ``unreachable`` and ``truncated`` exist so that "nothing to resolve" cannot be confused
     with "could not tell". An unwrite that reported zero incidents because every query failed
     would be claiming a clean catalog it never checked.
+
+    ``unreachable`` carries the asset *and the error*, because the error is the evidence. The
+    same reasoning as Stage 4 keeping PostgreSQL's own message rather than a category: an
+    operator who is told a sweep failed can do nothing with that, and one who is shown what
+    the catalog said can.
     """
 
     found: tuple[str, ...]
-    unreachable: tuple[str, ...]
+    unreachable: tuple[tuple[str, str], ...]
     truncated: tuple[str, ...]
 
     @property
@@ -205,7 +210,7 @@ def raised_on(catalog: Catalog, entity_urns: tuple[str, ...]) -> IncidentSweep:
     actually there instead of being told what to expect.
     """
     found: list[str] = []
-    unreachable: list[str] = []
+    unreachable: list[tuple[str, str]] = []
     truncated: list[str] = []
 
     for urn in entity_urns:
@@ -213,10 +218,11 @@ def raised_on(catalog: Catalog, entity_urns: tuple[str, ...]) -> IncidentSweep:
             payload = catalog.graph.execute_graphql(
                 _INCIDENTS_ON_ASSET, {"urn": urn, "count": _PAGE}
             )
-        except Exception:  # noqa: BLE001 — one unreadable asset must not abort the sweep
-            # Recorded rather than skipped. A caller that cannot see an asset has not
-            # established that the asset is clean.
-            unreachable.append(urn)
+        except Exception as exc:  # noqa: BLE001 — one unreadable asset must not abort the sweep
+            # Recorded with its error rather than skipped. A caller that cannot see an asset
+            # has not established that the asset is clean, and the reason is what makes the
+            # difference actionable.
+            unreachable.append((urn, str(exc).strip().splitlines()[0][:200]))
             continue
 
         dataset = (payload or {}).get("dataset") or {}
