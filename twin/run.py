@@ -220,6 +220,11 @@ def main(argv: Iterable[str] | None = None) -> int:
         action="store_true",
         help="print every statement the run would execute, without executing any",
     )
+    parser.add_argument(
+        "--incidents",
+        action="store_true",
+        help="raise a DataHub incident for every asset this run observed failing",
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     try:
@@ -300,7 +305,45 @@ def main(argv: Iterable[str] | None = None) -> int:
     _print_ungraded(grade(timeline.broken, affected(observed), layout.to_rebuild), graph)
     _print_paging(graph, timeline)
     _print_consumers(consumers)
+
+    if args.incidents:
+        _raise_incidents(graph, scenario, observed)
     return 0
+
+
+def _raise_incidents(graph, scenario, observed) -> None:
+    """Raise DataHub incidents for what this run *observed*, never for what it predicted.
+
+    Kept behind a flag rather than run by default. Writing to a catalog is a side effect on
+    something the operator owns, and a verification run should not change the estate's
+    metadata because somebody wanted to see a scorecard.
+    """
+    from twin import provenance
+    from twin.write.catalog import Catalog, WriteBackError
+    from twin.write.incidents import raise_for
+
+    def urns_for(key: str) -> tuple[str, ...]:
+        if not graph.has(key):
+            return ()
+        return tuple(u for u in graph.asset(key).urns if u.startswith("urn:li:dataset:"))
+
+    stamp = provenance.stamp()
+    line = f"graph {graph.fingerprint}; commit {stamp['commit'] or 'unknown'}"
+
+    try:
+        raised = raise_for(Catalog.connect(), scenario.name, observed, urns_for, line)
+    except WriteBackError as exc:
+        print(f"\n  could not raise incidents: {exc}\n", file=sys.stderr)
+        return
+
+    print("\n  INCIDENTS RAISED IN DATAHUB")
+    print(_RULE)
+    if not raised:
+        print("    none — nothing was observed to fail, so nothing is claimed")
+    for incident in raised:
+        print(f"    {incident.key:<44} {incident.impact}")
+    print(_RULE)
+    print(f"    {len(raised)} raised against observed failures; resolve with: make unwrite\n")
 
 
 if __name__ == "__main__":

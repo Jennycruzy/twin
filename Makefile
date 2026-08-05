@@ -114,6 +114,11 @@ run: ## Run one scenario end to end (SCENARIO=scenarios/<name>.yml)
 	@$(SAY) "Running $(SCENARIO) through stages 1-4."
 	@$(RUN) python -m twin.run $(SCENARIO)
 
+.PHONY: incidents
+incidents: ## Run a scenario and raise DataHub incidents for what actually broke
+	@$(SAY) "Running $(SCENARIO) and raising incidents for observed failures."
+	@$(RUN) python -m twin.run $(SCENARIO) --incidents
+
 .PHONY: dry-run
 dry-run: ## Print every statement a scenario would execute, without executing any
 	@$(SAY) "Dry run of $(SCENARIO)."
@@ -135,6 +140,7 @@ score: ## Rank the estate by fragility (knockout sweep)
 
 # ------------------------------------------------------------------ stage 5
 
+.PHONY: writeback prove-writeback unwrite
 writeback: ## Write fragility scores into DataHub as structured properties
 	@$(SAY) "Writing the fragility dimension into DataHub."
 	@$(RUN) python -m twin.write

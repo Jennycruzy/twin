@@ -6,8 +6,9 @@ verify its own predictions, and writes fragility scores back into DataHub as str
 properties, so every other agent inherits a dimension the catalog didn't have before.
 
 Those scores are read back out *over MCP* — the same interface another agent would use to
-find them — by `make prove-writeback`, and removed by `make unwrite`. Incidents on assets
-that failed verification are the remaining part of that stage and are not built yet.
+find them — by `make prove-writeback`. Assets that Stage 4 *proved* broken are raised as
+DataHub incidents carrying the warehouse's own error text, and `make unwrite` removes every
+value and resolves every incident.
 
 ---
 
@@ -25,7 +26,7 @@ same sentence, and never in the present tense.
 | **M4** | Stage 2 — propagation engine and failure timelines | **Done** |
 | **M5** | Stage 3 — fragility scoring and the knockout sweep | **Done** |
 | **M6** | Stage 5 — write-back of fragility as structured properties | **Done** |
-| M6b | Stage 5 — incidents on assets that failed verification | Not started |
+| **M6b** | Stage 5 — incidents on assets that failed verification | **Done** |
 | M7 | Repair PRs, CI gate | Not started |
 
 The pipeline is deliberately not being built in pipeline order. Stage 4 — executing a real
@@ -549,6 +550,42 @@ table is ordered by the rank DataHub returned rather than by one recomputed loca
 disagreement between the catalog and the scorer appears here instead of being hidden by the
 sort.
 
+### Incidents: what Twin proved, not what it predicted
+
+A fragility score is a prediction. An incident is a statement that something *did* happen,
+and Stage 4 puts Twin in a position to make that statement honestly — it executed the fault,
+rebuilt the models with dbt, and holds PostgreSQL's own error for every asset that broke.
+
+```
+make incidents SCENARIO=scenarios/fx_rate_column_drop.yml
+```
+
+```
+  INCIDENTS RAISED IN DATAHUB
+  --------------------------------------------------------------------------
+    intermediate.int_orders_enriched             unavailable
+    marts.mart_revenue_daily                     unavailable
+    ml.feature_txn_velocity                      unavailable
+    ...
+  --------------------------------------------------------------------------
+    14 raised against observed failures; resolve with: make unwrite
+```
+
+Only observed failures qualify. An asset Twin *predicted* would break gets no incident, so
+the incident list is always a subset of what the scorecard graded — a catalog full of alerts
+for things that did not happen would undo the only property that makes Twin's output worth
+reading. Each incident carries the warehouse's error text verbatim, the scenario that caused
+it, and the run's provenance, because an incident with no stated cause is an alert nobody can
+act on.
+
+Incident URNs are deterministic, so re-running a scenario updates its incidents instead of
+duplicating them, and `make unwrite` marks them **resolved rather than deleting them**. The
+condition was real when it was recorded, and a catalog that forgets its incidents cannot be
+used to argue about how often anything breaks.
+
+Raising them is behind a flag rather than on by default: a verification run should not change
+the estate's metadata because somebody wanted to see a scorecard.
+
 ### Removing it, and a DataHub constraint worth knowing
 
 `make unwrite` clears every value Twin wrote and deliberately leaves the thirteen definitions
@@ -663,7 +700,8 @@ credentials, no paid tier.
 | `make dry-run` | Print every statement a scenario would execute, execute none |
 | `make writeback` | Write fragility into DataHub as structured properties |
 | `make prove-writeback` | Read Twin's scores back out over MCP |
-| `make unwrite` | Remove every value Twin wrote |
+| `make incidents` | Run a scenario and raise incidents for what actually broke |
+| `make unwrite` | Remove every value Twin wrote, and resolve its incidents |
 | `make test` | Run the test suite |
 | `make down` | Stop everything and remove the volumes |
 | `make help` | List every target that exists |
@@ -731,9 +769,10 @@ Honest and specific, and this list will grow rather than shrink as stages land.
   variation on the five.
 - **Verification grades what broke, not when.** The predicted timeline's ordering is not
   checked by shadow execution. See *What is and is not being claimed*.
-- **Stage 5 writes properties, not incidents.** Fragility is in the catalog and readable over
-  MCP, but an asset that Stage 4 *proved* broken does not yet raise a DataHub incident, so the
-  verification result stays in this repository. See the build status table.
+- **Incidents cannot be listed through DataHub's own search.** An incident written by
+  emitting `incidentInfo` through the SDK is stored correctly and reads back by URN, but
+  GraphQL search refuses to hydrate it and fails the whole query. Twin therefore derives its
+  incident URNs deterministically rather than discovering them. See `docs/UPSTREAM.md`.
 - **Write-back goes through the SDK**, because the MCP server exposes no write tool. Twin
   reads over MCP and writes beside it, which is stated wherever a round trip is claimed —
   see *What the MCP server does not expose*.

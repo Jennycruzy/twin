@@ -1,7 +1,7 @@
 # Upstream findings
 
-Four things Twin found by building on DataHub's agent-facing interfaces, written as issue
-drafts ready to file. All four were discovered by using the interface for real work rather
+Five things Twin found by building on DataHub's agent-facing interfaces, written as issue
+drafts ready to file. All five were discovered by using the interface for real work rather
 than by reading its documentation, and each carries a reproduction rather than an assertion.
 
 Filing status: **not yet filed.** These are drafts.
@@ -88,7 +88,53 @@ matches. Silently succeeding and then refusing the recreate is the worst of the 
 
 ---
 
-## 3. MCP exposes no usage statistics
+## 3. Incidents written through the SDK cannot be hydrated by GraphQL search
+
+**Repo:** `datahub-project/datahub`
+**Type:** bug
+**Version:** v1.7.0 (GMS, OpenSearch backend)
+
+An incident created by emitting an `incidentInfo` aspect is stored correctly — `exists()`
+returns true and `get_aspect` returns the full aspect with its type, status, entities, title
+and description. But it cannot be listed. `get_urns_by_filter(entity_types=["incident"])`
+finds the documents in the index and then fails to resolve them:
+
+```
+The field at path '/scrollAcrossEntities/searchResults[0]/entity' was declared as
+a non null type, but the code involved in retrieving data has wrongly returned a
+null value. ... NullValueInNonNullableField
+```
+
+Every result fails this way, so the whole query errors rather than degrading — one
+unhydratable incident makes the incident list unusable.
+
+The obvious guess is a missing `status` aspect, since that is what marks an entity live for
+search elsewhere. That is not available here: emitting `status` for an incident is rejected
+with `Unknown aspect status for entity incident` (422).
+
+**Reproduction:**
+
+```python
+graph.emit(MetadataChangeProposalWrapper(entityUrn=INCIDENT_URN, aspect=IncidentInfoClass(...)))
+assert graph.exists(INCIDENT_URN)                       # True
+graph.get_aspect(INCIDENT_URN, IncidentInfoClass)       # returns the aspect
+graph.get_urns_by_filter(entity_types=["incident"])     # GraphError
+```
+
+**Why it matters:** a tool that raises incidents cannot then find its own incidents to resolve
+them. Twin works around it by making incident URNs deterministic — derived from the scenario
+name and the asset key — so the set can be reconstructed without asking the catalog. That
+works, but it means any tool raising incidents programmatically has to invent the same
+workaround, and a tool that raised them with random ids could not clean up after itself at
+all.
+
+**Suggested fix:** whatever aspect GraphQL requires to hydrate an incident should either be
+written automatically on creation, or be writable through the SDK, or the search should skip
+unhydratable results rather than failing the query.
+
+---
+
+## 4. MCP exposes no usage statistics
 
 **Repo:** `datahub-project/mcp-server-datahub`
 **Type:** feature gap
@@ -108,7 +154,7 @@ of the six tools.
 
 ---
 
-## 4. Column lineage does not return the landing column
+## 5. Column lineage does not return the landing column
 
 **Repo:** `datahub-project/mcp-server-datahub`
 **Type:** feature gap / performance
