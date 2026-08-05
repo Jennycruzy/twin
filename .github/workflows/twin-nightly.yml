@@ -43,6 +43,13 @@ jobs:
       - name: Prove the estate is real
         run: make verify-estate
 
+      # The tests workflow runs the suite with no stack, so the execution-boundary tests that
+      # need a warehouse skip there — and those cover the one property this project cannot be
+      # wrong about. They run here, where the estate is already up, and they run before the
+      # read so that a boundary regression fails the nightly rather than being recorded by it.
+      - name: Run the test suite against the live warehouse
+        run: docker compose run --rm -T twin python -m pytest -q
+
       - name: Read the estate over MCP
         run: docker compose run --rm -T twin python -m twin.read --append-history examples/history/nightly.jsonl
 
