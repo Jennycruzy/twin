@@ -88,16 +88,15 @@ matches. Silently succeeding and then refusing the recreate is the worst of the 
 
 ---
 
-## 3. Incidents written through the SDK cannot be hydrated by GraphQL search
+## 3. Incidents are not reachable as top-level entities, and the failure is loud
 
 **Repo:** `datahub-project/datahub`
-**Type:** bug
+**Type:** rough edge / API shape
 **Version:** v1.7.0 (GMS, OpenSearch backend)
 
-An incident created by emitting an `incidentInfo` aspect is stored correctly — `exists()`
-returns true and `get_aspect` returns the full aspect with its type, status, entities, title
-and description. But it cannot be listed. `get_urns_by_filter(entity_types=["incident"])`
-finds the documents in the index and then fails to resolve them:
+Incidents cannot be resolved through the generic entity paths. `entity(urn:)` returns null
+for an incident URN, and `get_urns_by_filter(entity_types=["incident"])` finds documents in
+the search index and then fails the entire query:
 
 ```
 The field at path '/scrollAcrossEntities/searchResults[0]/entity' was declared as
@@ -105,32 +104,35 @@ a non null type, but the code involved in retrieving data has wrongly returned a
 null value. ... NullValueInNonNullableField
 ```
 
-Every result fails this way, so the whole query errors rather than degrading — one
-unhydratable incident makes the incident list unusable.
+They *are* reachable through the asset, and this works correctly:
 
-The obvious guess is a missing `status` aspect, since that is what marks an entity live for
-search elsewhere. That is not available here: emitting `status` for an incident is rejected
-with `Unknown aspect status for entity incident` (422).
+```graphql
+query($urn: String!) {
+  dataset(urn: $urn) { incidents(start: 0, count: 100) { incidents { urn status { state } } } }
+}
+```
+
+**This is not an SDK problem, which is worth stating because it looks like one.** An incident
+created by DataHub's own `raiseIncident` GraphQL mutation behaves identically: it reads back
+correctly through the asset, and `entity(urn:)` returns null for it too. Incidents written by
+emitting an `incidentInfo` aspect are indistinguishable from ones the UI creates.
+
+**What is worth fixing** is the failure mode rather than the design. If incidents are
+deliberately not top-level searchable entities — a reasonable choice, since an incident
+without its asset is close to meaningless — then `scrollAcrossEntities` should not accept
+`incident` as an entity type and then fail on hydration. One unhydratable result nulls a
+non-nullable field and takes the whole query with it, so the caller gets a schema violation
+instead of an empty list or an error naming the cause. Rejecting the filter up front, or
+skipping results that cannot be hydrated, would both be clearer.
 
 **Reproduction:**
 
 ```python
-graph.emit(MetadataChangeProposalWrapper(entityUrn=INCIDENT_URN, aspect=IncidentInfoClass(...)))
-assert graph.exists(INCIDENT_URN)                       # True
-graph.get_aspect(INCIDENT_URN, IncidentInfoClass)       # returns the aspect
-graph.get_urns_by_filter(entity_types=["incident"])     # GraphError
+graph.execute_graphql(RAISE_INCIDENT_MUTATION, ...)   # DataHub's own creation path
+graph.execute_graphql('query($u:String!){ entity(urn:$u){ urn } }', {'u': urn})  # -> None
+graph.get_urns_by_filter(entity_types=["incident"])                              # -> GraphError
+graph.execute_graphql(INCIDENTS_ON_DATASET, {'urn': dataset_urn})                # -> works
 ```
-
-**Why it matters:** a tool that raises incidents cannot then find its own incidents to resolve
-them. Twin works around it by making incident URNs deterministic — derived from the scenario
-name and the asset key — so the set can be reconstructed without asking the catalog. That
-works, but it means any tool raising incidents programmatically has to invent the same
-workaround, and a tool that raised them with random ids could not clean up after itself at
-all.
-
-**Suggested fix:** whatever aspect GraphQL requires to hydrate an incident should either be
-written automatically on creation, or be writable through the SDK, or the search should skip
-unhydratable results rather than failing the query.
 
 ---
 

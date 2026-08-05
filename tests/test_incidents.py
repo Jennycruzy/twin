@@ -15,7 +15,7 @@ import pytest
 
 from twin.faults import DEGRADED, UNAVAILABLE
 from twin.verify.observe import AssetObservation
-from twin.write.incidents import URN_PREFIX, incident_urn, raise_for, raised_urns
+from twin.write.incidents import URN_PREFIX, incident_urn, raise_for, raised_on
 
 
 @dataclass
@@ -23,6 +23,7 @@ class FakeCatalog:
     """Records what would have been written, so the rules can be tested without DataHub."""
 
     emitted: list = None
+    graph: object = None
 
     def __post_init__(self):
         self.emitted = []
@@ -118,8 +119,44 @@ def test_urns_carry_no_dots_because_datahub_normalises_them():
     assert "." not in incident_urn("fx", "marts.mart_revenue_daily").removeprefix(URN_PREFIX)
 
 
-def test_the_resolvable_set_is_derived_rather_than_remembered():
-    """Resolution cannot search for these, so it must be able to reconstruct them."""
-    urns = raised_urns(("fx", "nulled"), ("marts.a", "marts.b"))
-    assert len(urns) == 4
-    assert incident_urn("nulled", "marts.b") in urns
+class FakeGraph:
+    """Answers the incidents-on-asset query the way GMS does."""
+
+    def __init__(self, payload):
+        self.payload = payload
+
+    def execute_graphql(self, query, variables):
+        return self.payload
+
+
+def test_resolution_finds_twins_incidents_on_the_asset():
+    """Read back from the asset, because incidents are not top-level entities in GraphQL."""
+    catalog = FakeCatalog()
+    catalog.graph = FakeGraph(
+        {
+            "dataset": {
+                "incidents": {
+                    "incidents": [
+                        {"urn": incident_urn("fx", "marts.a"), "status": {"state": "ACTIVE"}},
+                        {"urn": "urn:li:incident:someone-elses", "status": {"state": "ACTIVE"}},
+                    ]
+                }
+            }
+        }
+    )
+    found = raised_on(catalog, ("urn:li:dataset:(x,y,PROD)",))
+    assert found == (incident_urn("fx", "marts.a"),)
+
+
+def test_resolution_never_touches_an_incident_twin_did_not_raise():
+    catalog = FakeCatalog()
+    catalog.graph = FakeGraph(
+        {"dataset": {"incidents": {"incidents": [{"urn": "urn:li:incident:abc"}]}}}
+    )
+    assert raised_on(catalog, ("urn:li:dataset:(x,y,PROD)",)) == ()
+
+
+def test_an_asset_with_no_incidents_does_not_break_the_sweep():
+    catalog = FakeCatalog()
+    catalog.graph = FakeGraph({"dataset": None})
+    assert raised_on(catalog, ("urn:li:dataset:(x,y,PROD)",)) == ()

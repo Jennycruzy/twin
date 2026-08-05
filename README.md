@@ -769,10 +769,12 @@ Honest and specific, and this list will grow rather than shrink as stages land.
   variation on the five.
 - **Verification grades what broke, not when.** The predicted timeline's ordering is not
   checked by shadow execution. See *What is and is not being claimed*.
-- **Incidents cannot be listed through DataHub's own search.** An incident written by
-  emitting `incidentInfo` through the SDK is stored correctly and reads back by URN, but
-  GraphQL search refuses to hydrate it and fails the whole query. Twin therefore derives its
-  incident URNs deterministically rather than discovering them. See `docs/UPSTREAM.md`.
+- **Incidents are read back through the asset, not searched for.** DataHub does not resolve
+  incidents as top-level entities — `entity(urn:)` returns null and filtering a search by
+  `incident` fails outright — so Twin finds its own incidents by asking each dataset what
+  incidents it has. This is not a limitation of writing them through the SDK: an incident
+  created by DataHub's own `raiseIncident` mutation behaves the same way. See
+  `docs/UPSTREAM.md`.
 - **Write-back goes through the SDK**, because the MCP server exposes no write tool. Twin
   reads over MCP and writes beside it, which is stated wherever a round trip is claimed —
   see *What the MCP server does not expose*.

@@ -155,17 +155,42 @@ def _audit(when: int) -> object:
     return AuditStampClass(time=when, actor="urn:li:corpuser:twin")
 
 
-def raised_urns(scenarios: tuple[str, ...], keys: tuple[str, ...]) -> tuple[str, ...]:
-    """Every incident URN Twin could have raised, derived rather than remembered.
+_INCIDENTS_ON_ASSET = """
+query($urn: String!) {
+  dataset(urn: $urn) {
+    incidents(start: 0, count: 100) {
+      incidents { urn status { state } }
+    }
+  }
+}
+"""
 
-    Resolution cannot discover Twin's incidents by searching for them: an incident written by
-    emitting `incidentInfo` is stored and reads back correctly by URN, but DataHub's GraphQL
-    search refuses to hydrate it — the entity comes back null and the whole query fails with
-    NullValueInNonNullableField. That is why incident URNs are deterministic in the first
-    place, so the set can be reconstructed from the scenarios and the estate without asking
-    the catalog to list them. See docs/UPSTREAM.md.
+
+def raised_on(catalog: Catalog, entity_urns: tuple[str, ...]) -> tuple[str, ...]:
+    """Twin's incidents, read back from the assets they were raised against.
+
+    Incidents are not top-level entities in DataHub's GraphQL: ``entity(urn:)`` returns null
+    for one and ``get_urns_by_filter(entity_types=["incident"])`` fails outright. They are
+    reached through the asset — ``dataset(urn) { incidents { ... } }`` — which resolves them
+    correctly however they were created, whether by this module or by DataHub's own
+    ``raiseIncident`` mutation.
+
+    Reading them back from the asset rather than reconstructing the URNs is what makes
+    resolution independent of Twin's own naming: an incident raised by a scenario file that
+    has since been renamed or deleted is still found, because the catalog is asked what is
+    actually there instead of being told what to expect.
     """
-    return tuple(incident_urn(scenario, key) for scenario in scenarios for key in keys)
+    found: list[str] = []
+    for urn in entity_urns:
+        try:
+            payload = catalog.graph.execute_graphql(_INCIDENTS_ON_ASSET, {"urn": urn})
+        except Exception:  # noqa: BLE001 — an asset with no incidents must not fail the sweep
+            continue
+        dataset = (payload or {}).get("dataset") or {}
+        for incident in ((dataset.get("incidents") or {}).get("incidents") or []):
+            if str(incident.get("urn", "")).startswith(URN_PREFIX):
+                found.append(str(incident["urn"]))
+    return tuple(sorted(set(found)))
 
 
 __all__ = [
@@ -173,7 +198,7 @@ __all__ = [
     "URN_PREFIX",
     "incident_urn",
     "raise_for",
-    "raised_urns",
+    "raised_on",
     "resolve_all",
     "WriteBackError",
 ]

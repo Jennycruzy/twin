@@ -28,7 +28,7 @@ from twin.score.fragility import CONFIG, Score, Weights, score_estate
 from twin.score.knockout import sweep
 from twin.score.usage import read_usage
 from twin.write.catalog import Catalog, WriteBackError
-from twin.write.incidents import raised_urns, resolve_all
+from twin.write.incidents import raised_on, resolve_all
 from twin.write.properties import DEFINITIONS, PREFIX, values_for
 
 _RULE = "  " + "-" * 74
@@ -167,15 +167,10 @@ def _prove(graph: EstateGraph, limit: int) -> int:
     return 0
 
 
-def _twin_incidents(graph: EstateGraph) -> tuple[str, ...]:
-    """Every incident URN Twin could have raised, derived from scenarios and the estate.
-
-    Derived rather than searched, because DataHub's GraphQL search cannot hydrate an incident
-    written through the SDK. `resolve_all` skips the ones that do not exist.
-    """
-    scenarios = tuple(sorted(p.stem for p in Path("scenarios").glob("*.yml")))
-    keys = tuple(a.key for a in graph.of_kind(KIND_DATASET))
-    return raised_urns(scenarios, keys)
+def _twin_incidents(catalog: Catalog, graph: EstateGraph) -> tuple[str, ...]:
+    """Every incident Twin raised, read back from the assets it raised them against."""
+    urns = tuple(u for a in graph.of_kind(KIND_DATASET) for u in _dataset_urns(graph, a.key)[:1])
+    return raised_on(catalog, urns)
 
 
 def _number(value: object) -> float | None:
@@ -211,7 +206,7 @@ def _unwrite(graph: EstateGraph, purge: bool) -> int:
     urns = [urn for a in graph.of_kind(KIND_DATASET) for urn in _dataset_urns(graph, a.key)]
     catalog = Catalog.connect()
     cleared, deleted = catalog.unwrite(tuple(urns), purge=purge)
-    resolved = resolve_all(catalog, _twin_incidents(graph))
+    resolved = resolve_all(catalog, _twin_incidents(catalog, graph))
     print(f"\n  cleared Twin's values from {cleared} assets")
     if resolved:
         print(f"  resolved {resolved} incidents Twin raised (resolved, not deleted)")
