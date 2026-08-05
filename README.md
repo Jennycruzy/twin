@@ -208,12 +208,21 @@ Recorded here rather than worked around, because the gaps shape what later stage
 
 ### The nightly read
 
-`.github/workflows/twin-nightly.yml` runs on a cron from the day Stage 1 started producing
-output. Each night it stands the stack up from nothing, builds the estate, reads it back
-over MCP, and appends one measured line to `examples/history/nightly.jsonl`. The record
-widens as stages land — fragility scores join it when Stage 3 exists — but it stays
-append-only and a line is written only when a run genuinely succeeded. A trend cannot be
-backfilled, so the accumulation starts now rather than the week of a deadline.
+A fragility trend is a claim about change over time, and it is only worth anything if the
+runs actually happened. History cannot be backfilled, so it started accumulating the day
+Stage 1 produced output rather than the week of a deadline.
+
+Two paths write to the same append-only file, `examples/history/nightly.jsonl`:
+
+- **`ops/nightly-read.sh`**, run from a host cron at 03:17. Suits a machine where the stack
+  is already up — it verifies the estate, reads it over MCP, and commits one line.
+- **`.github/workflows/twin-nightly.yml`**, the same job on a runner that builds the estate
+  from nothing first.
+
+Either way a line is written only when a read genuinely succeeded, and the estate is
+verified before the read, so a broken estate produces no history rather than a line
+asserting something nobody checked. The record widens as stages land — fragility scores join
+it when Stage 3 exists — but it stays append-only.
 
 ## Stage 4: executing the failure and grading the prediction
 
