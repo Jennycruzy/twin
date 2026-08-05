@@ -250,9 +250,15 @@ Which is why the two lines in `nightly.jsonl` today report 251 column edges and 
 09:30 and 10:20 on 2026-08-05, before `03d001f` followed damage past the first hop and
 `6ca2842` reverted a column-pair narrowing that was losing edges. The history is append-only,
 so it records what was true when it ran rather than being rewritten to agree with the
-current README — but nothing in the file itself says that, which is a real gap. Those records
-carry no commit SHA, and until they do, a reader has to be told this rather than being able
-to check it.
+current README.
+
+Those two lines carry no commit SHA, which is why the paragraph above is necessary — a reader
+had to be told the reason rather than being able to check it. Every record written from
+`306dc8b` onward carries the commit that produced it and whether the tree was dirty at the
+time, and fragility records also carry a digest of the weights file, so a ranking that moves
+can be attributed to the estate changing or to the model changing without anyone having to
+explain it in a README. The two lines above stay as they are: rewriting history to make it
+tidier is the one thing an append-only record cannot do.
 
 ## Stage 2: five failure modes, not five faults
 

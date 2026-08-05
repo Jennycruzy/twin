@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
+from twin import provenance
 from twin.read import read_estate
 from twin.read.cache import load_latest, store
 from twin.read.model import EstateGraph
@@ -77,8 +78,15 @@ def _append_history(graph: EstateGraph, scores: tuple[Score, ...], path: Path) -
     weeks is only evidence if the runs happened on those days. Each line carries the graph
     fingerprint it was computed from, so a change in the ranking can be attributed to the
     platform changing rather than to the model changing.
+
+    It also carries the commit and a digest of the weights file, which is what makes that
+    attribution checkable rather than asserted: the estate moving and the model moving are
+    the two explanations for a ranking that shifts, and a trend that cannot separate them is
+    not measuring anything. See :mod:`twin.provenance`.
     """
     record = {
+        **provenance.stamp(),
+        "scoring_config": provenance.digest_of(CONFIG),
         "scored_at": graph.read_at,
         "fingerprint": graph.fingerprint,
         "assets_scored": len(scores),

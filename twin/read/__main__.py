@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 from typing import Iterable
 
+from twin import provenance
 from twin.read import gms_url, read_estate
 from twin.read.cache import CACHE_DIR, load_latest, previous_fingerprint, store
 from twin.read.mcp_client import DataHubMCPError
@@ -78,11 +79,16 @@ def _append_history(graph: EstateGraph, path: Path) -> None:
 
     The fragility trend is only real if the runs actually happened, so history accumulates
     one measured line per run and is never generated retrospectively. Later stages widen
-    the record — scores join it when Stage 3 lands — but the shape stays append-only, and a
-    line is written when a read succeeds and not otherwise.
+    the record — Stage 3 appends to its own file alongside this one — but the shape stays
+    append-only, and a line is written when a read succeeds and not otherwise.
+
+    Each line also carries the commit that produced it, so a record that disagrees with a
+    later one can be attributed to the code changing rather than leaving a reader to guess.
+    See :mod:`twin.provenance`.
     """
     datasets = graph.of_kind(KIND_DATASET)
     record = {
+        **provenance.stamp(),
         "read_at": graph.read_at,
         "fingerprint": graph.fingerprint,
         "source": graph.source,
