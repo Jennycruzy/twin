@@ -96,6 +96,30 @@ def test_a_column_drop_must_name_a_column(tmp_path):
         load_scenario(scenario_file(tmp_path, body))
 
 
+def test_a_fault_on_a_raw_source_is_refused(tmp_path):
+    """dbt resolves ``source()`` to the real schema, so the shadow copy is never read.
+
+    The fault would be created, dbt would build from production, nothing would break for the
+    stated reason, and Stage 4 would grade a full scorecard against an estate where the fault
+    never landed — the failure the loader exists to prevent.
+    """
+    body = (
+        'name: null_at_source\nfault:\n  kind: null_out_column\n  asset: raw_pg.orders\n'
+        '  column: merchant_id\n  at: "05:30"\n'
+    )
+    with pytest.raises(ScenarioError, match="raw source"):
+        load_scenario(scenario_file(tmp_path, body))
+
+
+def test_a_fault_on_a_model_in_a_source_named_layer_is_still_accepted(tmp_path):
+    """Only the two ingested layers are sources. A model is a model wherever it sits."""
+    body = (
+        'name: fine\nfault:\n  kind: null_out_column\n  asset: staging.stg_orders\n'
+        '  column: merchant_id\n  at: "05:30"\n'
+    )
+    assert load_scenario(scenario_file(tmp_path, body)).fault.asset == "staging.stg_orders"
+
+
 def test_a_scenario_name_that_is_not_a_safe_identifier_is_rejected(tmp_path):
     """The name becomes part of the schema the fault executes in."""
     body = 'name: "drop; DROP SCHEMA marts"\nfault:\n  kind: drop_column\n  asset: a.b\n  column: c\n'

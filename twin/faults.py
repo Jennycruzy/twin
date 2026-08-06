@@ -29,6 +29,18 @@ DEGRADED = "degraded"
 BY_COLUMN = "column"
 BY_TABLE = "table"
 
+# Layers that ingestion lands rather than dbt building them. dbt resolves `source()` through
+# sources.yml, whose schema is fixed, so a shadow copy of one of these is created and then
+# never read — the fault does not reach the build at all. Stage 4 therefore cannot execute a
+# fault on them, and the scenario loader refuses one rather than grading a run in which
+# nothing broke for the reason claimed.
+SOURCE_LAYERS = ("raw_pg", "raw_events")
+
+
+def is_source_layer(asset: str) -> bool:
+    """Whether an asset key names something ingestion lands rather than dbt builds."""
+    return asset.split(".")[0] in SOURCE_LAYERS
+
 
 @dataclass(frozen=True)
 class FaultKind:

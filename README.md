@@ -765,10 +765,19 @@ Honest and specific, and this list will grow rather than shrink as stages land.
   4 executes as the owner of everything it creates, so it cannot revoke its own privileges
   convincingly, and a simulated permission error would be exactly the kind of pretend
   evidence this project exists to avoid.
+- **Faults execute on dbt models, not on raw sources.** dbt resolves `source()` through
+  `sources.yml`, whose schema is fixed, so a shadow copy of `raw_pg` or `raw_events` would be
+  built and never read: the models would build from production, nothing would break for the
+  reason claimed, and Stage 4 would grade a scorecard for a fault that never landed. The
+  loader refuses these by name rather than producing that scorecard. Supporting them needs a
+  shadow source override, which is not built. Found by writing a scenario against
+  `raw_pg.orders` and noticing that `stg_orders` came back identical to production.
 - **Where column lineage is absent, damage falls back to table grain** and over-predicts.
   That is deliberate — under-predicting a quiet failure is the more expensive error — but it
   means the precision of a degrading fault depends on how completely the catalog describes
-  the columns involved.
+  the columns involved. This applies at the fault origin as well as at every later hop; until
+  `propagate.py` was corrected it applied only after the first, so a fault on an origin with
+  no column lineage predicted nothing at all.
 - **Every scenario currently scores 1.00.** Read that as "survives the five faults it has
   been tested against", not as "correct". The control column above is the reason to believe
   the scores at all, and a sixth fault chosen adversarially would be worth more than a sixth

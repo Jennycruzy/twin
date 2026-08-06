@@ -39,6 +39,7 @@ import contextlib
 from dataclasses import dataclass
 from typing import Iterator
 
+from twin.faults import SOURCE_LAYERS
 from twin.read.model import KIND_DATASET, EstateGraph
 from twin.simulate.scenario import Scenario
 from twin.verify.faults import faulted_relation_sql
@@ -46,8 +47,10 @@ from twin.verify.guard import SHADOW_PREFIX
 from twin.verify.warehouse import ShadowConnection, literal, qualified
 
 # Layers that are landed by ingestion rather than built by dbt. They are sources, not
-# models: dbt reads them where they are, so the shadow estate never needs a copy.
-_SOURCE_LAYERS = ("raw_pg", "raw_events")
+# models: dbt reads them where they are, so the shadow estate never needs a copy. The same
+# fact is why the scenario loader refuses a fault on one — see twin.faults.SOURCE_LAYERS,
+# which is where this list lives so that the two cannot drift apart.
+_SOURCE_LAYERS = SOURCE_LAYERS
 
 
 @dataclass(frozen=True)
