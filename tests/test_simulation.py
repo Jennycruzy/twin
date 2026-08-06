@@ -116,6 +116,51 @@ def test_a_sibling_downstream_reading_another_column_is_not_predicted(tmp_path):
     assert "intermediate.ignores_rate" not in timeline.broken
 
 
+def estate_without_column_lineage() -> EstateGraph:
+    """The same shape, with the column lineage stripped off the origin.
+
+    This is the ordinary case for a raw source: the catalog knows what reads the table and
+    nothing about what reads its columns.
+    """
+    full = estate()
+    return EstateGraph(
+        assets=full.assets,
+        edges=full.edges,
+        column_edges=(),
+        read_at=full.read_at,
+        source=full.source,
+    )
+
+
+def test_a_column_fault_on_an_origin_with_no_column_lineage_falls_back_to_table_grain(tmp_path):
+    """No column lineage is an absence of information, not evidence that nothing reads it.
+
+    Treating it as silence turns a gap in the catalog into a false negative that no scorecard
+    can show, because Twin never claimed the asset would break. ``_spread`` has always fallen
+    back here; the first wave did not, so a fault on a raw source predicted nothing at all.
+    """
+    timeline = predict(estate_without_column_lineage(), drop_rate(tmp_path))
+    assert set(timeline.direct) == {"intermediate.uses_rate", "intermediate.ignores_rate"}
+
+
+def test_a_column_no_one_reads_stays_silent_when_the_origin_does_describe_its_columns(tmp_path):
+    """The distinction the fallback turns on, and the reason it is not simply always-on.
+
+    An origin that describes its column lineage and does not list this column among the
+    sources has said something: nothing downstream reads it. Falling back there would
+    over-predict on real information, which is a different failure from over-predicting on
+    none.
+    """
+    scenario = load_scenario(
+        scenario_file(
+            tmp_path,
+            'name: drop_fee\nfault:\n  kind: drop_column\n  asset: staging.fx\n'
+            '  column: fee\n  at: "04:12"\n',
+        )
+    )
+    assert predict(estate(), scenario).direct == ()
+
+
 def test_breakage_follows_lineage_beyond_the_first_wave(tmp_path):
     timeline = predict(estate(), drop_rate(tmp_path))
     assert set(timeline.broken) == {

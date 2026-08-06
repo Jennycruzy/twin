@@ -146,11 +146,20 @@ def _first_wave(
     from it. A table-grained fault — the asset is deleted, the asset stops updating — reaches
     every consumer and affects all of their columns, because there is no column to
     discriminate on.
+
+    Where the origin has no column lineage at all, a column-grained fault falls back to table
+    grain, exactly as ``_spread`` does at every later hop. The distinction that matters is
+    between *no information* and *information saying no one reads this*: an origin that
+    describes its columns and does not list this one among their sources genuinely has no
+    column-grain consumers, and silence there is a finding. An origin that describes no
+    columns at all has told us nothing, and treating that as "nothing breaks" turns a gap in
+    the catalog into a false negative with no alarm attached to it — the one error this model
+    is least able to afford.
     """
     origin = scenario.fault.asset
     definition = scenario.fault.definition
 
-    if definition.is_column_grained:
+    if definition.is_column_grained and any(e.source == origin for e in graph.column_edges):
         column = scenario.fault.column or ""
         landings: dict[str, set[str]] = {}
         for edge in graph.columns_consuming(origin, column):
