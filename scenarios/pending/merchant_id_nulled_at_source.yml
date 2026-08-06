@@ -1,0 +1,38 @@
+# The same fault as merchant_id_nulled, one level upstream, where the catalog is thinner.
+#
+# This scenario exists to be failed. The other five are faults Twin handles well; this one is
+# aimed squarely at the place the propagation model is documented to be weakest, and it is
+# kept because a model that has only been tested where it is strong has not been tested.
+#
+# raw_pg.orders is a raw source. DataHub knows what reads the table and nothing about what
+# reads its columns — 0 column edges, against 18 for staging.stg_orders one hop below. So the
+# fault cannot be narrowed to the readers of merchant_id and falls back to table grain,
+# carrying every column of every downstream asset with it.
+#
+# That fallback is deliberate: an absent catalog entry is missing information, not evidence
+# that nothing reads the column, and under-predicting a quiet failure is the more expensive
+# error. The cost of that choice is visible here as false alarms, and the scorecard prints
+# them by name. Expect precision well below 1.00 and recall high — Twin catching everything
+# that breaks and a good deal that does not.
+#
+# Read the precision here as the price of the caution, not as a defect to be tuned away. The
+# way to improve it is more column lineage in the catalog, not a less cautious model.
+
+name: merchant_id_nulled_at_source
+title: The merchant identifier stops being populated, at the raw source
+
+description: |
+  The same upstream change as merchant_id_nulled, caught one level earlier — in raw_pg.orders
+  rather than staging.stg_orders. Nothing about the fault differs. What differs is how much
+  the catalog can say about it.
+
+  Below the staging layer, column lineage exists and the prediction is precise. At the raw
+  source it does not, and Twin degrades to the only claim it can still make honestly: that
+  everything downstream of this table is now suspect. That claim is safe and imprecise, and
+  this scenario is the measurement of how imprecise.
+
+fault:
+  kind: null_out_column
+  asset: raw_pg.orders
+  column: merchant_id
+  at: "05:30"
