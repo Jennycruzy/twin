@@ -153,6 +153,12 @@ unwrite: ## Remove everything Twin wrote to DataHub
 	@$(SAY) "Removing every property Twin wrote."
 	@$(RUN) python -m twin.write --unwrite
 
+# ------------------------------------------------------------------ examples
+
+.PHONY: examples
+examples: ## Regenerate examples/ from real runs (needs the stack up; ~7 min)
+	@./ops/capture-examples.sh
+
 # ------------------------------------------------------------------ tests
 
 .PHONY: test

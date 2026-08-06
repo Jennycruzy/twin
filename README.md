@@ -782,6 +782,27 @@ Honest and specific, and this list will grow rather than shrink as stages land.
   been tested against", not as "correct". The control column above is the reason to believe
   the scores at all, and a sixth fault chosen adversarially would be worth more than a sixth
   variation on the five.
+
+  That sixth fault was attempted, against `raw_pg.orders.merchant_id` — the same fault as
+  `merchant_id_nulled`, one level upstream where the catalog is thinner. It did not produce a
+  sixth score. It produced two defects in Twin, both now fixed and both visible in the
+  history:
+
+  - Propagation fell back to table grain where column lineage was missing at every hop
+    *except the fault origin*, so a fault on a raw source predicted nothing at all. A false
+    negative with a scorecard attached to it, which is the worst shape an error here can
+    take. Fixed, with the distinction it turns on pinned by tests.
+  - Stage 4 could not execute a fault on a raw source at all, because dbt resolves `source()`
+    through `sources.yml` and would have built from production while Twin graded a fault that
+    never landed. Caught by reading the isolated phase and noticing that a model reading the
+    nulled column came back *identical to production*, which is impossible if the fault
+    arrived. The loader now refuses these by name.
+
+  This is offered as what it is. It is evidence that the verification catches Twin's own
+  errors, which is a different claim from evidence that the fragility weights are not fitted
+  to the estate — and the second claim still rests on the control column alone. The
+  adversarial scenario remains the right way to test it, and needs the source override named
+  above before it can run honestly.
 - **Verification grades what broke, not when.** The predicted timeline's ordering is not
   checked by shadow execution. See *What is and is not being claimed*.
 - **Incidents are read back through the asset, not searched for.** DataHub does not resolve
@@ -795,8 +816,10 @@ Honest and specific, and this list will grow rather than shrink as stages land.
   see *What the MCP server does not expose*.
 - **The public evidence trail is thin.** Both GitHub Actions workflows are disabled because
   Actions are unavailable on this account, so the record is a host cron and the commits it
-  produces. `examples/` holds the history files and nothing else yet: no committed
-  verification reports, no incidents, no repair PRs.
+  produces. `examples/` holds the nightly history, the estate and scoring reports, and a
+  graded transcript of every scenario — all captured from real runs by
+  `ops/capture-examples.sh` and regenerated with `make examples`, never written by hand. No
+  incidents transcript and no repair PRs.
 
 ## License
 

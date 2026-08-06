@@ -20,7 +20,9 @@ venv/
 *.egg-info/
 
 # Reports are regenerated on every run. Committed sample outputs live in examples/.
-reports/
+# Anchored: an unanchored `reports/` also matches examples/reports/, which is exactly the
+# directory the line above says is meant to be committed.
+/reports/
 
 .DS_Store
 

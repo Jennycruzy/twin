@@ -1,0 +1,137 @@
+"""Render examples/history/*.jsonl as a table a reader will actually look at.
+
+The JSONL files are the record: append-only, one line per run that genuinely happened. They
+are also unreadable, which means the nightly trend — the one claim Twin makes that cannot be
+manufactured after the fact — is invisible to anyone who does not open a JSON viewer.
+
+This renders them and nothing else. It reads the same files, computes no new numbers, and
+carries no thresholds or verdicts: every value below appears in the JSONL as written. If a
+line is malformed it is reported rather than skipped, because a history with a silent hole in
+it is worse than one that says where the hole is.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+HISTORY = Path("examples/history")
+
+
+def _load(path: Path) -> tuple[list[dict], list[str]]:
+    """Every parseable record, and a complaint for every line that was not."""
+    records: list[dict] = []
+    problems: list[str] = []
+    if not path.exists():
+        return records, [f"{path} does not exist"]
+    for number, line in enumerate(path.read_text().splitlines(), start=1):
+        if not line.strip():
+            continue
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError as exc:
+            problems.append(f"{path.name} line {number} is not valid JSON: {exc}")
+    return records, problems
+
+
+def _cell(value: object) -> str:
+    if value is None:
+        return "—"
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, float):
+        return f"{value:,.3f}"
+    if isinstance(value, int):
+        return f"{value:,}"
+    return str(value)
+
+
+def _table(headings: list[str], rows: list[list[str]]) -> list[str]:
+    return [
+        "| " + " | ".join(headings) + " |",
+        "|" + "|".join("---" for _ in headings) + "|",
+        *["| " + " | ".join(row) + " |" for row in rows],
+    ]
+
+
+def _reads(records: list[dict]) -> list[str]:
+    if not records:
+        return ["No reads recorded yet."]
+    rows = [
+        [
+            _cell(r.get("read_at")),
+            _cell(r.get("fingerprint")),
+            _cell(r.get("assets")),
+            _cell(r.get("datasets")),
+            _cell(r.get("edges")),
+            _cell(r.get("column_edges")),
+            _cell(r.get("unowned_datasets")),
+            _cell(r.get("commit")),
+        ]
+        for r in records
+    ]
+    return _table(
+        ["read at (UTC)", "fingerprint", "assets", "datasets", "edges", "column edges",
+         "unowned", "commit"],
+        rows,
+    )
+
+
+def _scores(records: list[dict]) -> list[str]:
+    if not records:
+        return ["No scoring runs recorded yet."]
+    rows = []
+    for r in records:
+        top = r.get("top") or []
+        first = top[0] if top else {}
+        rows.append(
+            [
+                _cell(r.get("scored_at")),
+                _cell(r.get("fingerprint")),
+                _cell(r.get("assets_scored")),
+                _cell(r.get("mean_score")),
+                f"{first.get('key', '—')} ({_cell(first.get('score'))})",
+            ]
+        )
+    return _table(
+        ["scored at (UTC)", "fingerprint", "assets scored", "mean score", "most fragile"],
+        rows,
+    )
+
+
+def main() -> int:
+    reads, read_problems = _load(HISTORY / "nightly.jsonl")
+    scores, score_problems = _load(HISTORY / "fragility.jsonl")
+
+    lines = [
+        "# Nightly history",
+        "",
+        "Rendered from `nightly.jsonl` and `fragility.jsonl` in this directory by",
+        "`ops/render-history.py`. Those files are the record; this is a view of them.",
+        "Regenerate with `make examples`.",
+        "",
+        "Each line was written by a run that actually happened — the nightly appends only",
+        "after a read succeeds, so a failed night leaves no row rather than an asserted one.",
+        "A changed fingerprint means the estate's structure changed; an unchanged one across",
+        "nights is the evidence that scoring is deterministic.",
+        "",
+        "## Estate reads",
+        "",
+        *_reads(reads),
+        "",
+        "## Fragility scoring",
+        "",
+        *_scores(scores),
+    ]
+
+    problems = read_problems + score_problems
+    if problems:
+        lines += ["", "## Lines that could not be read", ""]
+        lines += [f"- {p}" for p in problems]
+
+    print("\n".join(lines))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
