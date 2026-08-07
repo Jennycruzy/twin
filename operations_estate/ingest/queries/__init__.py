@@ -1,0 +1,1 @@
+"""Operations consumer query definitions."""

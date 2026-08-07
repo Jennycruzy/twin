@@ -27,7 +27,6 @@ from twin.verify.warehouse import ShadowConnection
 # are absent on purpose: raw data is never copied, so a query reading it should keep reading
 # the real thing.
 _MODEL_SCHEMAS = ("staging", "intermediate", "marts", "ml")
-_SCHEMA_REFERENCE = re.compile(rf"\b({'|'.join(_MODEL_SCHEMAS)})\.", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -45,9 +44,14 @@ class ConsumerCheck:
         return self.error is not None
 
 
-def repoint(sql: str, schema: str) -> str:
+def repoint(
+    sql: str, schema: str, model_schemas: tuple[str, ...] = _MODEL_SCHEMAS
+) -> str:
     """Rewrite a consumer query to read the shadow estate."""
-    return _SCHEMA_REFERENCE.sub(f"{schema}.", sql)
+    if not model_schemas:
+        return sql
+    reference = re.compile(rf"\b({'|'.join(map(re.escape, model_schemas))})\.", re.IGNORECASE)
+    return reference.sub(f"{schema}.", sql)
 
 
 def load_workload(workload_path: Path) -> tuple[dict, ...]:
@@ -56,14 +60,17 @@ def load_workload(workload_path: Path) -> tuple[dict, ...]:
 
 
 def run_consumer_queries(
-    connection: ShadowConnection, layout: ShadowEstate, workload_path: Path
+    connection: ShadowConnection,
+    layout: ShadowEstate,
+    workload_path: Path,
+    model_schemas: tuple[str, ...] = _MODEL_SCHEMAS,
 ) -> tuple[ConsumerCheck, ...]:
     """Run every declared consumer query against the shadow estate."""
     queries_dir = workload_path.parent
     checks = []
     for declared in load_workload(workload_path):
         sql = (queries_dir / declared["file"]).read_text()
-        failure = connection.try_execute(repoint(sql, layout.schema))
+        failure = connection.try_execute(repoint(sql, layout.schema, model_schemas))
         checks.append(
             ConsumerCheck(
                 query=str(declared["file"]),

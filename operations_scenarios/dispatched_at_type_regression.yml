@@ -1,0 +1,8 @@
+name: dispatched_at_type_regression
+title: Dispatch timestamps arrive as text
+description: The feed keeps values but loses the timestamp type needed for daily rollups.
+fault:
+  kind: change_column_type
+  asset: ops_staging.stg_shipments
+  column: dispatched_at
+  at: "04:12"

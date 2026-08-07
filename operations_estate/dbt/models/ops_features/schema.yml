@@ -1,0 +1,6 @@
+version: 2
+models:
+  - name: feature_delivery_risk
+    columns:
+      - name: shipment_id
+        tests: [not_null]

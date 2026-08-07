@@ -1,0 +1,27 @@
+days: 7
+queries:
+  - file: network_sla.sql
+    dataset: ops_marts.mart_delivery_sla
+    consumer: Operations Control Tower
+    daily_runs: 58
+    users: [dispatch@example.com, lin.nguyen@example.com]
+  - file: capacity_watch.sql
+    dataset: ops_marts.mart_capacity_risk
+    consumer: Operations Control Tower
+    daily_runs: 43
+    users: [dispatch@example.com, lin.nguyen@example.com, diego.mora@example.com]
+  - file: exception_queue.sql
+    dataset: ops_marts.mart_exception_queue
+    consumer: Operations Control Tower
+    daily_runs: 31
+    users: [dispatch@example.com, diego.mora@example.com]
+  - file: carrier_score.sql
+    dataset: ops_marts.mart_carrier_network
+    consumer: Carrier Performance Review
+    daily_runs: 17
+    users: [sofia.kim@example.com, lin.nguyen@example.com]
+  - file: delivery_features.sql
+    dataset: ops_features.feature_delivery_risk
+    consumer: Dispatch risk service
+    daily_runs: 22
+    users: [mira.patel@example.com]

@@ -28,6 +28,7 @@ from dataclasses import dataclass
 
 from datahub.ingestion.graph.client import DataHubGraph, DatahubClientConfig
 from datahub.metadata.schema_classes import DatasetUsageStatisticsClass
+from twin.target import CatalogScope
 
 # The workload publishes one bucket per simulated day; ninety covers the estate's history
 # with room to spare.
@@ -43,12 +44,17 @@ class Usage:
     users: int
 
 
-def _logical_key(urn: str) -> str:
+def _logical_key(urn: str, scope: CatalogScope | None = None) -> str:
     """``...,warehouse.marts.mart_revenue_daily,PROD)`` -> ``marts.mart_revenue_daily``."""
-    return urn.split("(", 1)[1].split(",")[1].split(".", 1)[1]
+    qualified = urn.split("(", 1)[1].split(",")[1]
+    if scope and qualified.startswith(scope.dataset_path_prefix):
+        return qualified[len(scope.dataset_path_prefix):]
+    return qualified.split(".", 1)[1]
 
 
-def read_usage(gms_url: str | None = None) -> dict[str, Usage]:
+def read_usage(
+    gms_url: str | None = None, scope: CatalogScope | None = None
+) -> dict[str, Usage]:
     """Query counts per logical asset, as measured, or empty if DataHub is unreachable.
 
     Returning empty rather than raising is deliberate: scoring must still run against a
@@ -67,6 +73,8 @@ def read_usage(gms_url: str | None = None) -> dict[str, Usage]:
 
     usage: dict[str, Usage] = {}
     for urn in graph.get_urns_by_filter(entity_types=["dataset"], platform="postgres"):
+        if scope is not None and not scope.accepts({"urn": urn}):
+            continue
         buckets = graph.get_timeseries_values(
             entity_urn=urn,
             aspect_type=DatasetUsageStatisticsClass,
@@ -82,5 +90,6 @@ def read_usage(gms_url: str | None = None) -> dict[str, Usage]:
             for counter in (bucket.userCounts or [])
             if counter.user
         }
-        usage[_logical_key(urn)] = Usage(key=_logical_key(urn), queries=queries, users=len(people))
+        key = _logical_key(urn, scope)
+        usage[key] = Usage(key=key, queries=queries, users=len(people))
     return usage

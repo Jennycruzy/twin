@@ -1,0 +1,25 @@
+name: operations
+version: '1.0'
+config-version: 2
+profile: operations
+model-paths: [models]
+target-path: target
+clean-targets: [target, dbt_packages]
+
+vars:
+  operations_end_date: '2026-08-01'
+
+models:
+  operations:
+    ops_staging:
+      +schema: ops_staging
+      +materialized: view
+    ops_core:
+      +schema: ops_core
+      +materialized: table
+    ops_marts:
+      +schema: ops_marts
+      +materialized: table
+    ops_features:
+      +schema: ops_features
+      +materialized: table

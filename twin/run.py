@@ -35,9 +35,8 @@ from twin.verify.shadow import (
     shadow_estate,
 )
 from twin.verify.warehouse import Credentials, ShadowConnection
+from twin.target import TwinTarget, load_target
 
-DBT_PROJECT = Path("estate/dbt")
-WORKLOAD = Path("estate/ingest/queries/workload.yml")
 SHADOW_ARTIFACTS = Path("/tmp/twin-shadow")
 
 _RULE = "  " + "-" * 74
@@ -48,7 +47,7 @@ _IMPACT_QUESTION = {
 }
 
 
-def _load_graph(refresh: bool) -> EstateGraph:
+def _load_graph(target: TwinTarget, refresh: bool) -> EstateGraph:
     """The cached graph, or a fresh read if there is none.
 
     Verification is run repeatedly against one state of the estate — a scenario at a time, a
@@ -56,11 +55,11 @@ def _load_graph(refresh: bool) -> EstateGraph:
     produce a graph that is identical by construction.
     """
     if not refresh:
-        cached = load_latest()
+        cached = load_latest(target.cache_dir)
         if cached is not None:
             return cached
-    graph = asyncio.run(read_estate())
-    store(graph)
+    graph = asyncio.run(read_estate(scope=target.catalog))
+    store(graph, target.cache_dir)
     return graph
 
 
@@ -70,6 +69,7 @@ def _probe_each(
     connection: ShadowConnection,
     artifacts: Path,
     dry_run: bool,
+    target: TwinTarget,
 ) -> dict[str, AssetObservation]:
     """Build each downstream model on its own against the faulted asset.
 
@@ -83,7 +83,16 @@ def _probe_each(
     """
     observations: dict[str, AssetObservation] = {}
     for key in layout.to_rebuild:
-        outcome = probe_model(graph, layout, DBT_PROJECT, artifacts, key, dry_run=dry_run)
+        outcome = probe_model(
+            graph,
+            layout,
+            target.dbt_project,
+            artifacts,
+            key,
+            dry_run=dry_run,
+            dbt_target=target.dbt_target,
+            source_env_vars=tuple(target.source_env_vars),
+        )
         if not dry_run:
             observations.update(classify(connection, layout, outcome, (key,)))
             create_passthrough(connection, layout, key)
@@ -214,6 +223,7 @@ def _print_consumers(checks: Iterable[ConsumerCheck]) -> None:
 def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run one scenario through stages 1-4.")
     parser.add_argument("scenario", type=Path, help="path to a scenario YAML file")
+    parser.add_argument("--target", help="estate target name from targets/<name>.yml")
     parser.add_argument("--refresh", action="store_true", help="re-read the estate before running")
     parser.add_argument(
         "--dry-run",
@@ -225,7 +235,13 @@ def main(argv: Iterable[str] | None = None) -> int:
         action="store_true",
         help="raise a DataHub incident for every asset this run observed failing",
     )
+    parser.add_argument(
+        "--evidence",
+        type=Path,
+        help="append this real run to the deterministic context-integrity campaign record",
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
+    target = load_target(args.target)
 
     try:
         scenario = load_scenario(args.scenario)
@@ -233,7 +249,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         print(f"cannot load scenario: {exc}", file=sys.stderr)
         return 2
 
-    graph = _load_graph(args.refresh)
+    graph = _load_graph(target, args.refresh)
     if not graph.has(scenario.fault.asset):
         print(f"{scenario.fault.asset} is not in the estate graph", file=sys.stderr)
         return 2
@@ -242,28 +258,46 @@ def main(argv: Iterable[str] | None = None) -> int:
     timeline = predict(graph, scenario)
     _print_timeline(timeline, graph)
 
-    artifacts = SHADOW_ARTIFACTS / scenario.name
+    artifacts = SHADOW_ARTIFACTS / target.name / scenario.name
     connection = ShadowConnection(
-        schema=f"twin_shadow_{scenario.name}",
+        schema=f"{target.shadow_prefix}{target.name}_{scenario.name}",
         credentials=Credentials.shadow_role(),
         dry_run=args.dry_run,
     )
 
     try:
         with connection:
-            with shadow_estate(graph, scenario, connection) as layout:
-                probes = _probe_each(graph, layout, connection, artifacts, args.dry_run)
+            with shadow_estate(
+                graph,
+                scenario,
+                connection,
+                source_layers=tuple(sorted(target.source_layers)),
+                shadow_prefix=f"{target.shadow_prefix}{target.name}_",
+            ) as layout:
+                probes = _probe_each(graph, layout, connection, artifacts, args.dry_run, target)
                 for key in layout.to_rebuild:
                     drop_relation(connection, layout, model_name(key))
                 build = rebuild_downstream(
-                    graph, layout, DBT_PROJECT, artifacts, dry_run=args.dry_run
+                    graph,
+                    layout,
+                    target.dbt_project,
+                    artifacts,
+                    dry_run=args.dry_run,
+                    source_layers=tuple(sorted(target.source_layers)),
+                    dbt_target=target.dbt_target,
+                    source_env_vars=tuple(target.source_env_vars),
                 )
                 observed = (
                     {}
                     if args.dry_run
                     else classify(connection, layout, build, layout.to_rebuild)
                 )
-                consumers = run_consumer_queries(connection, layout, WORKLOAD)
+                consumers = run_consumer_queries(
+                    connection,
+                    layout,
+                    target.workload,
+                    tuple(sorted(target.model_schemas)),
+                )
     except UnsafeStatement as exc:
         print(f"\n  execution boundary refused a statement: {exc}\n", file=sys.stderr)
         return 3
@@ -305,6 +339,20 @@ def main(argv: Iterable[str] | None = None) -> int:
     _print_ungraded(grade(timeline.broken, affected(observed), layout.to_rebuild), graph)
     _print_paging(graph, timeline)
     _print_consumers(consumers)
+
+    if args.evidence:
+        from twin.context import record_evidence
+
+        record_evidence(
+            args.evidence,
+            target.name,
+            graph,
+            scenario,
+            timeline.broken,
+            observed,
+            sum(1 for check in consumers if check.broke),
+        )
+        print(f"  campaign evidence appended to {args.evidence}")
 
     if args.incidents:
         _raise_incidents(graph, scenario, observed)

@@ -1,0 +1,32 @@
+name: commerce
+
+catalog:
+  # This is the platform-instance component of the dataset URN emitted by the estate's
+  # ingestion recipes. Non-dataset entities in the original demo are all in this scope.
+  dataset_platform_instance: null
+  dataset_path_prefix: warehouse.
+  non_dataset_urn_prefixes:
+    - urn:li:chart:(looker,
+    - urn:li:dashboard:(looker,
+    - urn:li:mlFeature:(fraud_features_v3,
+    - urn:li:mlFeatureTable:(urn:li:dataPlatform:mlflow,
+    - urn:li:mlModelGroup:(urn:li:dataPlatform:mlflow,
+    - urn:li:mlModel:(urn:li:dataPlatform:mlflow,
+
+runtime:
+  dbt_project: estate/dbt
+  workload: estate/ingest/queries/workload.yml
+  scenario_dir: scenarios
+  # Preserve the existing cache so the current estate remains a warm, zero-regression path.
+  cache_dir: .twin
+  seed_module: estate.seed.generate
+  metadata_module: estate.ingest.emit
+  workload_module: estate.ingest.workload
+  verify_module: estate.verify_estate
+  postgres_recipe: estate/ingest/recipes/postgres.yml
+  dbt_recipe: estate/ingest/recipes/dbt.yml
+  source_layers: [raw_pg, raw_events]
+  model_schemas: [staging, intermediate, marts, ml]
+  source_env_vars: [TWIN_SHADOW_RAW_PG_SCHEMA, TWIN_SHADOW_RAW_EVENTS_SCHEMA]
+  dbt_target: shadow
+  shadow_prefix: twin_shadow_

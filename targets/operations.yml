@@ -1,0 +1,32 @@
+name: operations
+
+catalog:
+  # DataHub's platform instance is part of the dataset URN path. The matching dbt and
+  # Postgres recipes below must carry the same value, otherwise the two ingestions collide.
+  dataset_platform_instance: operations
+  dataset_path_prefix: operations.warehouse.
+  non_dataset_urn_prefixes:
+    - urn:li:chart:(ops-looker,
+    - urn:li:dashboard:(ops-looker,
+    - urn:li:mlFeature:(ops-fs,
+    - urn:li:mlFeatureTable:(urn:li:dataPlatform:ops-fs,
+    - urn:li:mlModelGroup:(urn:li:dataPlatform:ops-mlflow,
+    - urn:li:mlModel:(urn:li:dataPlatform:ops-mlflow,
+    - urn:li:mlModelDeployment:(urn:li:dataPlatform:ops-mlflow,
+
+runtime:
+  dbt_project: operations_estate/dbt
+  workload: operations_estate/ingest/queries/workload.yml
+  scenario_dir: operations_scenarios
+  cache_dir: .twin/operations
+  seed_module: operations_estate.seed.generate
+  metadata_module: operations_estate.ingest.emit
+  workload_module: operations_estate.ingest.workload
+  verify_module: operations_estate.verify_estate
+  postgres_recipe: operations_estate/ingest/recipes/postgres.yml
+  dbt_recipe: operations_estate/ingest/recipes/dbt.yml
+  source_layers: [ops_erp, ops_stream]
+  model_schemas: [ops_staging, ops_core, ops_marts, ops_features]
+  source_env_vars: [TWIN_SHADOW_OPS_ERP_SCHEMA, TWIN_SHADOW_OPS_STREAM_SCHEMA]
+  dbt_target: shadow
+  shadow_prefix: twin_shadow_

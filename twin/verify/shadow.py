@@ -64,7 +64,7 @@ class ShadowEstate:
     to_rebuild: tuple[str, ...]
 
 
-def schema_name(scenario: Scenario) -> str:
+def schema_name(scenario: Scenario, shadow_prefix: str = SHADOW_PREFIX) -> str:
     """The shadow schema for a scenario.
 
     Deterministic rather than random: a run that crashes leaves a schema whose name is
@@ -72,13 +72,17 @@ def schema_name(scenario: Scenario) -> str:
     prefix is not interpolated from anything — it comes from the guard, which is the module
     that refuses to touch anything without it.
     """
-    return f"{SHADOW_PREFIX}{scenario.name}"
+    if not shadow_prefix.startswith(SHADOW_PREFIX):
+        raise ValueError(f"shadow prefix must start with {SHADOW_PREFIX!r}")
+    return f"{shadow_prefix}{scenario.name}"
 
 
-def _is_model(graph: EstateGraph, key: str) -> bool:
+def _is_model(
+    graph: EstateGraph, key: str, source_layers: tuple[str, ...] = SOURCE_LAYERS
+) -> bool:
     """Whether dbt builds this asset, as opposed to ingestion landing it."""
     asset = graph.asset(key)
-    return asset.kind == KIND_DATASET and asset.layer not in _SOURCE_LAYERS
+    return asset.kind == KIND_DATASET and asset.layer not in source_layers
 
 
 def model_name(key: str) -> str:
@@ -90,19 +94,28 @@ def _source_schema(key: str) -> str:
     return key.split(".")[0]
 
 
-def plan(graph: EstateGraph, scenario: Scenario) -> ShadowEstate:
+def plan(
+    graph: EstateGraph,
+    scenario: Scenario,
+    source_layers: tuple[str, ...] = SOURCE_LAYERS,
+    shadow_prefix: str = SHADOW_PREFIX,
+) -> ShadowEstate:
     """Decide what the shadow estate contains, without touching the warehouse."""
     origin = scenario.fault.asset
-    downstream = {k for k in graph.reachable_downstream(origin) if _is_model(graph, k)}
-    models = {a.key for a in graph.of_kind(KIND_DATASET) if _is_model(graph, a.key)}
+    downstream = {
+        k for k in graph.reachable_downstream(origin) if _is_model(graph, k, source_layers)
+    }
+    models = {
+        a.key for a in graph.of_kind(KIND_DATASET) if _is_model(graph, a.key, source_layers)
+    }
     sources = {
         a.key
         for a in graph.of_kind(KIND_DATASET)
-        if a.layer in _SOURCE_LAYERS
+        if a.layer in source_layers
     }
 
     return ShadowEstate(
-        schema=schema_name(scenario),
+        schema=schema_name(scenario, shadow_prefix),
         faulted=origin,
         dropped_column=scenario.fault.column,
         # Source declarations are redirected into this schema for dbt. Every source table
@@ -114,10 +127,14 @@ def plan(graph: EstateGraph, scenario: Scenario) -> ShadowEstate:
 
 @contextlib.contextmanager
 def shadow_estate(
-    graph: EstateGraph, scenario: Scenario, connection: ShadowConnection
+    graph: EstateGraph,
+    scenario: Scenario,
+    connection: ShadowConnection,
+    source_layers: tuple[str, ...] = SOURCE_LAYERS,
+    shadow_prefix: str = SHADOW_PREFIX,
 ) -> Iterator[ShadowEstate]:
     """Stand the shadow estate up, hand it over, and tear it down whatever happens."""
-    layout = plan(graph, scenario)
+    layout = plan(graph, scenario, source_layers, shadow_prefix)
 
     _drop_schema(connection, layout.schema)
     connection.execute(f"CREATE SCHEMA {_quote_schema(layout.schema)}")

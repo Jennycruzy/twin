@@ -16,6 +16,7 @@ from twin.read.cache import CacheEntry, load_latest, store
 from twin.read.materialize import materialize
 from twin.read.mcp_client import DataHubMCP, DataHubMCPError
 from twin.read.model import Asset, Column, ColumnEdge, Edge, EstateGraph
+from twin.target import CatalogScope
 
 DEFAULT_GMS_URL = "http://datahub-gms:8080"
 
@@ -39,16 +40,21 @@ def gms_url() -> str:
 
 
 async def read_estate(
-    url: str | None = None, concurrency: int = 8, debug: bool = False
+    url: str | None = None,
+    concurrency: int = 8,
+    debug: bool = False,
+    scope: CatalogScope | None = None,
 ) -> EstateGraph:
-    """Read the estate from DataHub over MCP."""
+    """Read one estate from DataHub over MCP."""
     target = url or gms_url()
     async with DataHubMCP.connect(
         target, token=os.environ.get("DATAHUB_GMS_TOKEN") or None, concurrency=concurrency, debug=debug
     ) as client:
-        return await materialize(client, source=target)
+        return await materialize(client, source=target, scope=scope)
 
 
-def read_estate_sync(url: str | None = None, concurrency: int = 8) -> EstateGraph:
+def read_estate_sync(
+    url: str | None = None, concurrency: int = 8, scope: CatalogScope | None = None
+) -> EstateGraph:
     """Synchronous entry point for the stages that are not async."""
-    return asyncio.run(read_estate(url, concurrency=concurrency))
+    return asyncio.run(read_estate(url, concurrency=concurrency, scope=scope))

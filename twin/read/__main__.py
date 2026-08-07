@@ -17,9 +17,10 @@ from typing import Iterable
 
 from twin import provenance
 from twin.read import gms_url, read_estate
-from twin.read.cache import CACHE_DIR, load_latest, previous_fingerprint, store
+from twin.read.cache import load_latest, previous_fingerprint, store
 from twin.read.mcp_client import DataHubMCPError
 from twin.read.model import KIND_DATASET, EstateGraph
+from twin.target import load_target
 
 _LAYER_ORDER = ("raw_pg", "raw_events", "staging", "intermediate", "marts", "ml", "bi", "other")
 
@@ -105,8 +106,9 @@ def _append_history(graph: EstateGraph, path: Path) -> None:
 
 def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Read the estate from DataHub over MCP.")
-    parser.add_argument("--gms", default=gms_url(), help="DataHub GMS URL")
-    parser.add_argument("--cache-dir", type=Path, default=CACHE_DIR, help="where graphs are cached")
+    parser.add_argument("--target", help="estate target name from targets/<name>.yml")
+    parser.add_argument("--gms", default=None, help="DataHub GMS URL")
+    parser.add_argument("--cache-dir", type=Path, default=None, help="where graphs are cached")
     parser.add_argument("--concurrency", type=int, default=8, help="concurrent MCP calls")
     parser.add_argument("--debug", action="store_true", help="show the MCP server's own logging")
     parser.add_argument(
@@ -121,24 +123,29 @@ def main(argv: Iterable[str] | None = None) -> int:
         help="append one JSON line describing this read, for the nightly trend",
     )
     args = parser.parse_args(list(argv) if argv is not None else None)
+    target = load_target(args.target)
+    gms = args.gms or gms_url()
+    cache_dir = args.cache_dir or target.cache_dir
 
     if args.cached:
-        graph = load_latest(args.cache_dir)
+        graph = load_latest(cache_dir)
         if graph is None:
             print("no cached graph; run without --cached first", file=sys.stderr)
             return 2
         print(f"\n  {graph.summary_line()}\n  read at {graph.read_at} from {graph.source}\n")
         return 0
 
-    previous = previous_fingerprint(args.cache_dir)
+    previous = previous_fingerprint(cache_dir)
     started = time.monotonic()
     try:
-        graph = asyncio.run(read_estate(args.gms, concurrency=args.concurrency, debug=args.debug))
+        graph = asyncio.run(
+            read_estate(gms, concurrency=args.concurrency, debug=args.debug, scope=target.catalog)
+        )
     except DataHubMCPError as exc:
         print(f"reading the estate failed: {exc}", file=sys.stderr)
         return 1
     except Exception as exc:  # noqa: BLE001 - the CLI reports, it does not swallow
-        print(f"cannot reach DataHub at {args.gms}: {exc}", file=sys.stderr)
+        print(f"cannot reach DataHub at {gms}: {exc}", file=sys.stderr)
         print("is the stack up? try `make up`.", file=sys.stderr)
         return 2
     elapsed = time.monotonic() - started
@@ -147,7 +154,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         print("DataHub returned no entities; has `make estate` run?", file=sys.stderr)
         return 1
 
-    entry = store(graph, args.cache_dir)
+    entry = store(graph, cache_dir)
     if args.append_history:
         _append_history(graph, args.append_history)
     _print_report(graph, elapsed, previous, entry.path)

@@ -24,6 +24,7 @@ from twin.read.materialize import (
     _table_edges,
 )
 from twin.read.model import Asset, Column, ColumnEdge, Edge, EstateGraph, layer_of
+from twin.target import CatalogScope
 
 PG = "urn:li:dataset:(urn:li:dataPlatform:postgres,warehouse.staging.stg_fx_rates,PROD)"
 DBT = "urn:li:dataset:(urn:li:dataPlatform:dbt,warehouse.staging.stg_fx_rates,PROD)"
@@ -71,6 +72,13 @@ def dbt_entity() -> dict:
 
 def test_dataset_key_drops_the_database_and_keeps_the_schema():
     assert _key_for(pg_entity()) == "staging.stg_fx_rates"
+
+
+def test_dataset_key_uses_target_prefix_for_platform_instances():
+    entity = dict(pg_entity())
+    entity["urn"] = "urn:li:dataset:(urn:li:dataPlatform:postgres,operations.warehouse.ops_marts.model,PROD)"
+    scope = CatalogScope("operations", "operations.warehouse.")
+    assert _key_for(entity, scope) == "ops_marts.model"
 
 
 def test_siblings_share_one_key():

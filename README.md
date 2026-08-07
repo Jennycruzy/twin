@@ -2,8 +2,10 @@
 
 **Twin is chaos engineering for data platforms.** It reads DataHub's context graph,
 simulates failures across it, executes those failures for real against a live warehouse to
-verify its own predictions, and writes fragility scores back into DataHub as structured
-properties, so every other agent inherits a dimension the catalog didn't have before.
+verify its own predictions, and writes fragility plus context-confidence scores back into
+DataHub as structured properties, so every other agent inherits dimensions the catalog did
+not have before. The same scorer has also been run unchanged against an independent
+logistics estate.
 
 Those scores are read back out *over MCP* — the same interface another agent would use to
 find them — by `make prove-writeback`. Assets that Stage 4 *proved* broken are raised as
@@ -27,7 +29,8 @@ same sentence, and never in the present tense.
 | **M5** | Stage 3 — fragility scoring and the knockout sweep | **Done** |
 | **M6** | Stage 5 — write-back of fragility as structured properties | **Done** |
 | **M6b** | Stage 5 — incidents on assets that failed verification | **Done** |
-| M7 | Repair PRs, CI gate | Not started |
+| **M7** | Independent second estate, deterministic context-integrity campaign, context-confidence feedback | **Done** |
+| M8 | Repair PRs, CI gate | Not started |
 
 The pipeline is deliberately not being built in pipeline order. Stage 4 — executing a real
 fault and grading the prediction against what actually broke — is the component the whole
@@ -120,6 +123,35 @@ in for BI tools and analysts this demo estate does not have. What it buys is a r
 which is what makes usage-weighted scoring produce a meaningful ranking instead of a flat
 one. Those same queries are reused by Stage 4, which has to run the real dashboard-backing
 queries against the shadow environment and see which genuinely break.
+
+### The scorer generalises to a second estate
+
+The first estate is commerce/fintech. The operations_estate directory is a separate logistics
+domain with a different topology: ERP and telemetry sources, facility-day and carrier models,
+four ops_* warehouse layers, a dispatch workload, and a distinct DataHub platform-instance
+namespace. It is not a copy of the commerce project.
+
+    make estate TARGET=operations
+    make verify-estate TARGET=operations
+    make read TARGET=operations
+    make score TARGET=operations
+    make scenarios TARGET=operations
+
+The live operations read produced 25 datasets, 52 table edges, 82 column edges, four charts,
+two dashboards and four ML features. The unmodified scorer ranked ops_erp.shipments first
+after reading 1,197 real workload executions, and the four real shadow scenarios produced
+both clean hits and named misses. Scores remain positions within each estate, not values to
+compare directly.
+
+Twin also exposes a deterministic context-integrity loop:
+
+    make campaign TARGET=operations
+    make campaign TARGET=operations CAMPAIGN_EXECUTE=1
+
+The selected experiment is executed in the same shadow verifier, then its evidence lowers
+that experiment's novelty on the next plan. Context confidence is written beside fragility
+as three reversible properties: a score, a readable band, and the measured evidence behind
+it.
 
 ### The weaknesses are planted, but not labelled
 
@@ -297,7 +329,7 @@ has exactly the same number of rows as production and understates three days of 
 Row counts alone called that healthy and scored a correct prediction as a false alarm.
 
 ```
-make scenarios                    # run all six
+make scenarios                    # run every scenario for the selected target
 make run SCENARIO=scenarios/orders_feed_stalls.yml
 ```
 
@@ -537,7 +569,7 @@ make unwrite           # remove every value Twin wrote                 (~30s)
   provenance in the catalog: graph 2b0ff33cd937f51f; commit 47adecc; weights a65901c08535194f
 ```
 
-Thirteen properties per dataset: the fragility score, its complement as a resilience score,
+Sixteen properties per dataset: fragility score and its resilience complement,
 rank, blast radius, bus factor, a single-point-of-failure flag, when it was scored, the
 provenance line above, and all five score components. The components are published because a
 score nobody can take apart is a score nobody should act on, and that principle should
@@ -642,9 +674,10 @@ Five stages, two feedback loops, three entry points.
 
    Entry points that exist today:
      make run SCENARIO=...   one scenario — stages 1-4, report to stdout
-     make scenarios          all six, each graded
+     make scenarios          all scenarios for the selected target, each graded
+     make campaign           deterministic context-integrity experiment selection
      make score              stage 3 — rank the estate by fragility
-     make writeback          stage 5 — write fragility into DataHub
+     make writeback          stage 5 — write fragility and context into DataHub
      make prove-writeback    read it back over MCP
 
    Planned, and deliberately not in the Makefile until they work:
@@ -654,11 +687,12 @@ Five stages, two feedback loops, three entry points.
 
 The nightly job that runs today is `ops/nightly-read.sh` and
 `.github/workflows/twin-nightly.yml`, described under *The nightly read*. The host job verifies,
-reads, scores and writes the current fragility properties back to DataHub. The GitHub workflow
+reads, scores and writes the current fragility and context properties back to DataHub. The GitHub workflow
 still records the read history only because Actions are disabled on this account.
 
-Twin has no chat interface and will not be getting one. It is invoked by a scheduler, a
-scenario file, or a CI trigger.
+Twin has no chat interface. Its agentic loop is deterministic and evidence-bearing: it ranks
+the next real experiment, executes it, records what happened, and feeds that evidence back
+into context confidence. It is invoked by a scheduler, a scenario file, or a CI trigger.
 
 ## Safety
 
@@ -703,10 +737,11 @@ credentials, no paid tier.
 | `make read` | Read the estate over MCP and cache the graph |
 | `make graph` | Print the cached graph without touching DataHub |
 | `make run` | Run a scenario through stages 1-4 and grade the prediction |
-| `make scenarios` | Run all six scenarios in turn |
+| `make scenarios` | Run all scenarios for the selected target in turn |
+| `make campaign` | Rank or execute the next context-integrity experiment |
 | `make score` | Rank every asset by fragility |
 | `make dry-run` | Print every statement a scenario would execute, execute none |
-| `make writeback` | Write fragility into DataHub as structured properties |
+| `make writeback` | Write fragility and context confidence into DataHub |
 | `make prove-writeback` | Read Twin's scores back out over MCP |
 | `make incidents` | Run a scenario and raise incidents for what actually broke |
 | `make unwrite` | Remove every value Twin wrote, and resolve its incidents |

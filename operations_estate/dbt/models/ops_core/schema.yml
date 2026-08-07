@@ -1,0 +1,10 @@
+version: 2
+models:
+  - name: int_shipment_milestones
+    columns:
+      - name: shipment_id
+        tests: [unique, not_null]
+  - name: int_facility_day
+    columns:
+      - name: facility_id
+        tests: [not_null]

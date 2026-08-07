@@ -1,0 +1,7 @@
+name: shipments_table_dropped
+title: The shipment feed disappears
+description: The control tower loses the relation that anchors its delivery view.
+fault:
+  kind: drop_asset
+  asset: ops_staging.stg_shipments
+  at: "05:30"

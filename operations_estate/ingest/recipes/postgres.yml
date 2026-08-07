@@ -1,0 +1,27 @@
+source:
+  type: postgres
+  config:
+    host_port: "${WAREHOUSE_HOST:-warehouse}:${WAREHOUSE_PORT:-5432}"
+    database: "${WAREHOUSE_DB:-warehouse}"
+    username: "${WAREHOUSE_USER:-twin}"
+    password: "${WAREHOUSE_PASSWORD:-twin}"
+    platform_instance: operations
+    schema_pattern:
+      allow:
+        - "^ops_erp$"
+        - "^ops_stream$"
+        - "^ops_staging$"
+        - "^ops_core$"
+        - "^ops_marts$"
+        - "^ops_features$"
+    include_tables: true
+    include_views: true
+    include_view_lineage: false
+    profiling:
+      enabled: false
+
+sink:
+  type: datahub-rest
+  config:
+    server: "${DATAHUB_GMS_URL:-http://datahub-gms:8080}"
+    token: "${DATAHUB_GMS_TOKEN:-}"

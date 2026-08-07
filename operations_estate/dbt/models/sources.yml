@@ -1,0 +1,46 @@
+version: 2
+
+sources:
+  - name: ops_erp
+    description: Replicated warehouse-management system with facilities, carriers and work orders.
+    database: warehouse
+    schema: "{{ env_var('TWIN_SHADOW_OPS_ERP_SCHEMA', 'ops_erp') }}"
+    tables:
+      - name: facilities
+        meta: {owner: lin.nguyen@example.com, team: network-operations, refresh_cadence: daily_0200, sla_hours: 8, replicated: true, criticality_tier: tier1}
+        columns:
+          - name: facility_id
+          - name: facility_code
+          - name: region
+          - name: capacity_units
+          - name: opened_date
+          - name: owner_team
+      - name: carriers
+        meta: {owner: lin.nguyen@example.com, team: network-operations, refresh_cadence: weekly, sla_hours: 168, replicated: true, criticality_tier: tier3}
+      - name: shipments
+        meta: {owner: sofia.kim@example.com, team: transport-analytics, refresh_cadence: hourly, sla_hours: 3, replicated: true, criticality_tier: tier1}
+        columns:
+          - name: shipment_id
+          - name: facility_id
+          - name: carrier_id
+          - name: route_code
+          - name: dispatched_at
+          - name: promised_at
+          - name: delivered_at
+          - name: status
+          - name: package_count
+          - name: priority
+      - name: inventory_snapshots
+        meta: {owner: lin.nguyen@example.com, team: network-operations, refresh_cadence: every_3_days, sla_hours: 12, replicated: false, criticality_tier: tier2}
+      - name: work_orders
+        meta: {owner: diego.mora@example.com, team: facilities, refresh_cadence: hourly, sla_hours: 4, replicated: true, criticality_tier: tier2}
+
+  - name: ops_stream
+    description: Append-only scanner and cold-chain telemetry from the operating network.
+    database: warehouse
+    schema: "{{ env_var('TWIN_SHADOW_OPS_STREAM_SCHEMA', 'ops_stream') }}"
+    tables:
+      - name: scan_events
+        meta: {owner: sofia.kim@example.com, team: transport-analytics, refresh_cadence: continuous, sla_hours: 1, replicated: true, criticality_tier: tier1}
+      - name: temperature_readings
+        meta: {owner: diego.mora@example.com, team: facilities, refresh_cadence: continuous, sla_hours: 1, replicated: false, criticality_tier: tier2}

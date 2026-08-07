@@ -32,6 +32,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from twin.score.fragility import COMPONENTS, Score
+from twin.context import ContextConfidence
 
 # The namespace every property Twin writes lives under. `make unwrite` removes exactly the
 # properties matching this prefix and nothing else, so the prefix is what makes the write-back
@@ -158,6 +159,36 @@ DEFINITIONS: tuple[PropertyDefinition, ...] = (
             "changing or the model changing, and this is what tells them apart."
         ),
     ),
+    PropertyDefinition(
+        id=f"{PREFIX}context_confidence",
+        display_name="Twin: context confidence",
+        value_type=NUMBER,
+        description=(
+            "How much catalog context is present for an automated action on this dataset, "
+            "0-1 from lineage, schema, operational metadata, ownership, measured usage and "
+            "real verification evidence. This is confidence in the context, not a claim that "
+            "the data itself is correct."
+        ),
+    ),
+    PropertyDefinition(
+        id=f"{PREFIX}context_state",
+        display_name="Twin: context state",
+        value_type=STRING,
+        description=(
+            "A readable context-confidence band: high, partial or low. It is derived from "
+            "the published evidence components so an agent can choose whether to act or run "
+            "an experiment first."
+        ),
+    ),
+    PropertyDefinition(
+        id=f"{PREFIX}context_evidence",
+        display_name="Twin: context evidence",
+        value_type=STRING,
+        description=(
+            "The component values behind Twin's context-confidence band, kept on the asset "
+            "so a consumer can audit the recommendation without trusting a hidden model."
+        ),
+    ),
     *(_component_definition(name) for name in COMPONENTS),
 )
 
@@ -179,7 +210,13 @@ def bus_factor(score: Score) -> int:
     return len(set(score.knockout.owners_paged))
 
 
-def values_for(score: Score, rank: int, scored_at: str, provenance: str) -> dict[str, object]:
+def values_for(
+    score: Score,
+    rank: int,
+    scored_at: str,
+    provenance: str,
+    context: ContextConfidence | None = None,
+) -> dict[str, object]:
     """Every property value Twin writes for one asset, keyed by property id.
 
     Rounded where rounding is honest — a fragility score carries three decimals because that
@@ -197,4 +234,15 @@ def values_for(score: Score, rank: int, scored_at: str, provenance: str) -> dict
     }
     for name in COMPONENTS:
         values[f"{PREFIX}component_{name}"] = round(score.components[name], 4)
+    context = context or ContextConfidence(
+        key=score.key, score=0.0, state="low", lineage=0.0, schema=0.0,
+        operational=0.0, ownership=0.0, usage=0.0, verification=0.0,
+    )
+    values[f"{PREFIX}context_confidence"] = context.score
+    values[f"{PREFIX}context_state"] = context.state
+    values[f"{PREFIX}context_evidence"] = (
+        f"lineage={context.lineage:.2f};schema={context.schema:.2f};"
+        f"operational={context.operational:.2f};ownership={context.ownership:.2f};"
+        f"usage={context.usage:.2f};verification={context.verification:.2f}"
+    )
     return values

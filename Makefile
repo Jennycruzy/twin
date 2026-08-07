@@ -12,7 +12,6 @@ SHELL := /bin/bash
 
 COMPOSE := docker compose
 RUN     := $(COMPOSE) run --rm twin
-DBT     := cd /app/estate/dbt && dbt
 
 # Services that must be healthy before the estate can be built.
 STACK_SERVICES := warehouse datahub-gms datahub-frontend
@@ -65,93 +64,92 @@ estate: estate-seed estate-build estate-ingest estate-workload ## Seed, build an
 
 .PHONY: estate-seed
 estate-seed: ## Generate and load the raw source data
-	@$(SAY) "Seeding raw source data (~1.9M rows, deterministic)."
-	@$(RUN) python -m estate.seed.generate
+	@$(SAY) "Seeding the $(TARGET) raw source data."
+	@$(RUN) python -m twin.target seed --target $(TARGET)
 
 .PHONY: estate-build
 estate-build: ## Run dbt to build the warehouse models
-	@$(SAY) "Building 39 dbt models and running their tests."
-	@$(RUN) bash -c "$(DBT) build --target dev"
-	@$(SAY) "Generating dbt catalog for ingestion."
-	@$(RUN) bash -c "$(DBT) docs generate --target dev --no-compile"
+	@$(SAY) "Building the $(TARGET) dbt project and running its tests."
+	@$(RUN) python -m twin.target build --target $(TARGET)
 
 .PHONY: estate-ingest
 estate-ingest: ## Ingest the estate into DataHub
-	@$(SAY) "Ingesting the physical warehouse into DataHub."
-	@$(RUN) datahub ingest -c /app/estate/ingest/recipes/postgres.yml
-	@$(SAY) "Ingesting dbt lineage, column lineage and ownership."
-	@$(RUN) datahub ingest -c /app/estate/ingest/recipes/dbt.yml
-	@$(SAY) "Emitting people, dashboards and the ML branch."
-	@$(RUN) python -m estate.ingest.emit
+	@$(SAY) "Ingesting $(TARGET) physical tables, dbt lineage and operational metadata."
+	@$(RUN) python -m twin.target ingest --target $(TARGET)
 
 .PHONY: estate-workload
 estate-workload: ## Execute the consumer workload and publish usage statistics
-	@$(SAY) "Running the consumer workload against the warehouse."
-	@$(RUN) python -m estate.ingest.workload
+	@$(SAY) "Running the $(TARGET) consumer workload against the warehouse."
+	@$(RUN) python -m twin.target workload --target $(TARGET)
 
 .PHONY: verify-estate
 verify-estate: ## Prove the estate is real (prints a table, exits non-zero on failure)
-	@$(SAY) "Verifying the estate against DataHub."
-	@$(RUN) python -m estate.verify_estate
+	@$(SAY) "Verifying the $(TARGET) estate against DataHub."
+	@$(RUN) python -m twin.target verify --target $(TARGET)
 
 # ------------------------------------------------------------------ stage 1: read
 
 .PHONY: read
 read: ## Read the estate from DataHub over MCP and cache the graph
 	@$(SAY) "Reading the estate through the DataHub MCP server."
-	@$(RUN) python -m twin.read
+	@$(RUN) python -m twin.read --target $(TARGET)
 
 .PHONY: graph
 graph: ## Print the cached estate graph without touching DataHub
-	@$(RUN) python -m twin.read --cached
+	@$(RUN) python -m twin.read --target $(TARGET) --cached
 
 # ------------------------------------------------------------------ stage 4: verify
 
 SCENARIO ?= scenarios/fx_rate_column_drop.yml
+TARGET ?= commerce
 
 .PHONY: run
 run: ## Run one scenario end to end (SCENARIO=scenarios/<name>.yml)
-	@$(SAY) "Running $(SCENARIO) through stages 1-4."
-	@$(RUN) python -m twin.run $(SCENARIO)
+	@$(SAY) "Running $(TARGET):$(SCENARIO) through stages 1-4."
+	@$(RUN) python -m twin.run --target $(TARGET) $(SCENARIO)
 
 .PHONY: incidents
 incidents: ## Run a scenario and raise DataHub incidents for what actually broke
-	@$(SAY) "Running $(SCENARIO) and raising incidents for observed failures."
-	@$(RUN) python -m twin.run $(SCENARIO) --incidents
+	@$(SAY) "Running $(TARGET):$(SCENARIO) and raising incidents for observed failures."
+	@$(RUN) python -m twin.run --target $(TARGET) $(SCENARIO) --incidents
 
 .PHONY: dry-run
 dry-run: ## Print every statement a scenario would execute, without executing any
-	@$(SAY) "Dry run of $(SCENARIO)."
-	@$(RUN) python -m twin.run $(SCENARIO) --dry-run
+	@$(SAY) "Dry run of $(TARGET):$(SCENARIO)."
+	@$(RUN) python -m twin.run --target $(TARGET) $(SCENARIO) --dry-run
 
 .PHONY: scenarios
 scenarios: ## Run every scenario in scenarios/ and grade each one
-	@$(SAY) "Running every scenario."
-	@for scenario in scenarios/*.yml; do \
-		$(RUN) python -m twin.run $$scenario || exit 1; \
-	done
+	@$(SAY) "Running every $(TARGET) scenario."
+	@$(RUN) python -m twin.target scenarios --target $(TARGET)
+
+.PHONY: campaign
+CAMPAIGN_EXECUTE ?= 0
+campaign: ## Rank context-integrity experiments (CAMPAIGN_EXECUTE=1 runs the top one)
+	@$(SAY) "Planning the deterministic $(TARGET) context-integrity campaign."
+	@$(RUN) python -m twin.campaign --target $(TARGET) $(if $(filter 1,$(CAMPAIGN_EXECUTE)),--execute,)
 
 # ------------------------------------------------------------------ stage 3: score
 
 .PHONY: score
 score: ## Rank the estate by fragility (knockout sweep)
 	@$(SAY) "Sweeping every asset and scoring fragility."
-	@$(RUN) python -m twin.score
+	@$(RUN) python -m twin.score --target $(TARGET)
 
 # ------------------------------------------------------------------ stage 5
 
 .PHONY: writeback prove-writeback unwrite
 writeback: ## Write fragility scores into DataHub as structured properties
 	@$(SAY) "Writing the fragility dimension into DataHub."
-	@$(RUN) python -m twin.write
+	@$(RUN) python -m twin.write --target $(TARGET)
 
 prove-writeback: ## Read Twin's scores back out of DataHub over MCP
 	@$(SAY) "Reading the scores back over MCP, the way an agent would."
-	@$(RUN) python -m twin.write --prove
+	@$(RUN) python -m twin.write --target $(TARGET) --prove
 
 unwrite: ## Remove everything Twin wrote to DataHub
 	@$(SAY) "Removing every property Twin wrote."
-	@$(RUN) python -m twin.write --unwrite
+	@$(RUN) python -m twin.write --target $(TARGET) --unwrite
 
 # ------------------------------------------------------------------ examples
 
@@ -165,4 +163,3 @@ examples: ## Regenerate examples/ from real runs (needs the stack up; ~7 min)
 test: ## Run the test suite
 	@$(SAY) "Running tests."
 	@$(RUN) python -m pytest
-

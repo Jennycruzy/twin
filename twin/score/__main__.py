@@ -14,23 +14,25 @@ from pathlib import Path
 from typing import Iterable
 
 from twin import provenance
+from twin.context import all_confidence, evidence_path, verified_assets
 from twin.read import read_estate
 from twin.read.cache import load_latest, store
 from twin.read.model import EstateGraph
 from twin.score.fragility import COMPONENTS, CONFIG, Coverage, Score, Weights, score_estate
 from twin.score.knockout import sweep
 from twin.score.usage import read_usage
+from twin.target import TwinTarget, load_target
 
 _RULE = "  " + "-" * 92
 
 
-def _load_graph(refresh: bool) -> EstateGraph:
+def _load_graph(target: TwinTarget, refresh: bool) -> EstateGraph:
     if not refresh:
-        cached = load_latest()
+        cached = load_latest(target.cache_dir)
         if cached is not None:
             return cached
-    graph = asyncio.run(read_estate())
-    store(graph)
+    graph = asyncio.run(read_estate(scope=target.catalog))
+    store(graph, target.cache_dir)
     return graph
 
 
@@ -100,6 +102,7 @@ def _append_history(graph: EstateGraph, scores: tuple[Score, ...], path: Path) -
 
 def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Rank the estate by fragility.")
+    parser.add_argument("--target", help="estate target name from targets/<name>.yml")
     parser.add_argument("--refresh", action="store_true", help="re-read the estate first")
     parser.add_argument("--limit", type=int, default=15, help="rows to print")
     parser.add_argument("--config", type=Path, default=CONFIG)
@@ -110,15 +113,16 @@ def main(argv: Iterable[str] | None = None) -> int:
         help="append one JSON line of scores, for the nightly trend",
     )
     args = parser.parse_args(list(argv) if argv is not None else None)
+    target = load_target(args.target)
 
-    graph = _load_graph(args.refresh)
+    graph = _load_graph(target, args.refresh)
     try:
         weights = Weights.load(args.config)
     except (OSError, ValueError) as exc:
         print(f"cannot load scoring weights: {exc}", file=sys.stderr)
         return 2
 
-    usage = read_usage()
+    usage = read_usage(scope=target.catalog)
     knockouts = sweep(graph)
     scores = score_estate(graph, knockouts, usage, weights)
 
@@ -130,6 +134,12 @@ def main(argv: Iterable[str] | None = None) -> int:
         f"usage {coverage.usage:.0%}, ownership {coverage.ownership:.0%}, "
         f"tiers {coverage.tiers:.0%}"
     )
+    contexts = all_confidence(
+        graph, usage, verified_assets(evidence_path(target.cache_dir), graph.fingerprint)
+    )
+    mean_context = sum(item.score for item in contexts) / len(contexts) if contexts else 0.0
+    low_context = sum(item.state == "low" for item in contexts)
+    print(f"  context confidence: mean {mean_context:.0%}, low-context assets {low_context}")
     if coverage.replication < 0.5:
         print("  note: recovery rests on replication metadata that most assets lack;")
         print("        the ranking is falling back toward fan-out")

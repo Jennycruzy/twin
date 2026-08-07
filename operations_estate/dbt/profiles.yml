@@ -1,0 +1,25 @@
+operations:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('WAREHOUSE_HOST', 'warehouse') }}"
+      port: "{{ env_var('WAREHOUSE_PORT', '5432') | int }}"
+      dbname: "{{ env_var('WAREHOUSE_DB', 'warehouse') }}"
+      user: "{{ env_var('WAREHOUSE_USER', 'twin') }}"
+      password: "{{ env_var('WAREHOUSE_PASSWORD', 'twin') }}"
+      schema: public
+      threads: 4
+      keepalives_idle: 0
+      connect_timeout: 10
+    shadow:
+      type: postgres
+      host: "{{ env_var('WAREHOUSE_HOST', 'warehouse') }}"
+      port: "{{ env_var('WAREHOUSE_PORT', '5432') | int }}"
+      dbname: "{{ env_var('WAREHOUSE_DB', 'warehouse') }}"
+      user: "{{ env_var('WAREHOUSE_SHADOW_USER', 'twin_shadow') }}"
+      password: "{{ env_var('WAREHOUSE_SHADOW_PASSWORD', 'twin_shadow') }}"
+      schema: "{{ env_var('TWIN_SHADOW_SCHEMA') }}"
+      threads: 4
+      keepalives_idle: 0
+      connect_timeout: 10

@@ -35,6 +35,7 @@ from twin.read.model import (
     layer_of,
     sorted_unique,
 )
+from twin.target import CatalogScope
 
 # Entity types Twin models, in the order they are discovered. mlModelDeployment is absent
 # on purpose: it is not a searchable type through the MCP server's filter syntax and its
@@ -56,10 +57,12 @@ SEARCHABLE_KINDS = (
 _DB_PREFIX_PARTS = 1
 
 
-async def materialize(client: DataHubMCP, source: str) -> EstateGraph:
-    """Read the whole estate and return it as a graph."""
-    entities = await _discover(client)
-    urn_to_key = {e["urn"]: _key_for(e) for e in entities}
+async def materialize(
+    client: DataHubMCP, source: str, scope: CatalogScope | None = None
+) -> EstateGraph:
+    """Read one scoped estate from DataHub and return it as a graph."""
+    entities = await _discover(client, scope)
+    urn_to_key = {e["urn"]: _key_for(e, scope) for e in entities}
     assets = _fold(entities, urn_to_key)
 
     edges = await _table_edges(client, list(urn_to_key), urn_to_key)
@@ -79,11 +82,16 @@ async def materialize(client: DataHubMCP, source: str) -> EstateGraph:
 # ---------------------------------------------------------------------- discovery
 
 
-async def _discover(client: DataHubMCP) -> list[dict[str, Any]]:
-    """Every entity of every modelled kind, with full metadata."""
+async def _discover(
+    client: DataHubMCP, scope: CatalogScope | None = None
+) -> list[dict[str, Any]]:
+    """Every entity of every modelled kind, filtered to one target after hydration."""
     found = await asyncio.gather(*(client.search(f"entity_type = {k}") for k in SEARCHABLE_KINDS))
     urns = sorted({hit["urn"] for hits in found for hit in hits})
-    return await client.get_entities(urns)
+    entities = await client.get_entities(urns)
+    if scope is None:
+        return entities
+    return [entity for entity in entities if scope.accepts(entity)]
 
 
 def _kind_of(urn: str) -> str:
@@ -91,7 +99,7 @@ def _kind_of(urn: str) -> str:
     return urn.split(":", 3)[2]
 
 
-def _key_for(entity: dict[str, Any]) -> str:
+def _key_for(entity: dict[str, Any], scope: CatalogScope | None = None) -> str:
     """The logical name an asset is known by.
 
     Datasets key on schema-qualified name so that the Postgres and dbt entities for one
@@ -102,6 +110,8 @@ def _key_for(entity: dict[str, Any]) -> str:
     kind = _kind_of(urn)
     if kind == KIND_DATASET:
         qualified = urn.split("(", 1)[1].split(",")[1]
+        if scope and qualified.startswith(scope.dataset_path_prefix):
+            return qualified[len(scope.dataset_path_prefix):]
         return qualified.split(".", _DB_PREFIX_PARTS)[-1]
     return f"{kind}:{_display_name(entity)}"
 

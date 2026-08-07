@@ -1,0 +1,8 @@
+name: carrier_id_nulled
+title: Carrier assignment disappears from shipment staging
+description: A valid shipment still lands, but its carrier key becomes null.
+fault:
+  kind: null_out_column
+  asset: ops_staging.stg_shipments
+  column: carrier_id
+  at: "05:30"

@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Iterable
 
 from twin import provenance
+from twin.context import confidence as context_confidence
 from twin.read import gms_url, read_estate
 from twin.read.cache import load_latest, store
 from twin.read.mcp_client import DataHubMCP
@@ -30,6 +31,7 @@ from twin.score.usage import read_usage
 from twin.write.catalog import Catalog, WriteBackError
 from twin.write.incidents import raised_on, resolve_all
 from twin.write.properties import DEFINITIONS, PREFIX, values_for
+from twin.target import TwinTarget, load_target
 
 _RULE = "  " + "-" * 74
 
@@ -37,19 +39,21 @@ _RULE = "  " + "-" * 74
 _BATCH = 20
 
 
-def _load_graph(refresh: bool) -> EstateGraph:
+def _load_graph(target: TwinTarget, refresh: bool) -> EstateGraph:
     if not refresh:
-        cached = load_latest()
+        cached = load_latest(target.cache_dir)
         if cached is not None:
             return cached
-    graph = asyncio.run(read_estate())
-    store(graph)
+    graph = asyncio.run(read_estate(scope=target.catalog))
+    store(graph, target.cache_dir)
     return graph
 
 
-def _scored(graph: EstateGraph, config: Path) -> tuple[Score, ...]:
+def _scored(
+    graph: EstateGraph, config: Path, target: TwinTarget
+) -> tuple[Score, ...]:
     weights = Weights.load(config)
-    return score_estate(graph, sweep(graph), read_usage(), weights)
+    return score_estate(graph, sweep(graph), read_usage(scope=target.catalog), weights)
 
 
 def _dataset_urns(graph: EstateGraph, key: str) -> tuple[str, ...]:
@@ -76,8 +80,9 @@ def _provenance_line(graph: EstateGraph) -> str:
     )
 
 
-def _write(graph: EstateGraph, config: Path) -> int:
-    scores = _scored(graph, config)
+def _write(graph: EstateGraph, config: Path, target: TwinTarget) -> int:
+    usage = read_usage(scope=target.catalog)
+    scores = score_estate(graph, sweep(graph), usage, Weights.load(config))
     catalog = Catalog.connect()
 
     defined = catalog.bootstrap()
@@ -91,7 +96,10 @@ def _write(graph: EstateGraph, config: Path) -> int:
         if not urns:
             skipped.append(score.key)
             continue
-        values = values_for(score, rank, graph.read_at, line)
+        values = values_for(
+            score, rank, graph.read_at, line,
+            context=context_confidence(graph, score.key, usage),
+        )
         for urn in urns:
             catalog.write_values(urn, values)
         written += 1
@@ -146,12 +154,13 @@ def _prove(graph: EstateGraph, limit: int) -> int:
     print()
     print("  FRAGILITY, READ BACK OVER MCP")
     print(_RULE)
-    print(f"  {'RANK':>5}  {'ASSET':<40}{'SCORE':>8}{'BLAST':>7}{'BUS':>5}{'SPOF':>6}")
+    print(f"  {'RANK':>5}  {'ASSET':<40}{'SCORE':>8}{'CTX':>6}{'BLAST':>7}{'BUS':>5}{'SPOF':>6}")
     print(_RULE)
     for key, values in rows[:limit]:
         print(
             f"  {_as_int(values.get(f'{PREFIX}fragility_rank')):>5}  {key[:40]:<40}"
             f"{_number(values.get(f'{PREFIX}fragility_score')) or 0:>8.3f}"
+            f"{_number(values.get(f'{PREFIX}context_confidence')) or 0:>6.2f}"
             f"{_as_int(values.get(f'{PREFIX}blast_radius')):>7}"
             f"{_as_int(values.get(f'{PREFIX}bus_factor')):>5}"
             f"{str(values.get(f'{PREFIX}is_spof', '—')):>6}"
@@ -245,6 +254,7 @@ def _unwrite(graph: EstateGraph, purge: bool) -> int:
 
 def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Write Twin's fragility scores into DataHub.")
+    parser.add_argument("--target", help="estate target name from targets/<name>.yml")
     parser.add_argument("--refresh", action="store_true", help="re-read the estate first")
     parser.add_argument("--config", type=Path, default=CONFIG)
     parser.add_argument("--prove", action="store_true", help="read the values back over MCP")
@@ -256,14 +266,15 @@ def main(argv: Iterable[str] | None = None) -> int:
     )
     parser.add_argument("--limit", type=int, default=15, help="rows for --prove")
     args = parser.parse_args(list(argv) if argv is not None else None)
+    target = load_target(args.target)
 
-    graph = _load_graph(args.refresh)
+    graph = _load_graph(target, args.refresh)
     try:
         if args.prove:
             return _prove(graph, args.limit)
         if args.unwrite:
             return _unwrite(graph, args.purge)
-        return _write(graph, args.config)
+        return _write(graph, args.config, target)
     except WriteBackError as exc:
         print(f"write-back failed: {exc}", file=sys.stderr)
         return 2

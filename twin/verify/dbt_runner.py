@@ -96,9 +96,10 @@ def _name_index(graph: EstateGraph) -> dict[str, str]:
     return {model_name(a.key): a.key for a in graph.of_kind(KIND_DATASET)}
 
 
-def _selector(key: str) -> str:
+def _selector(key: str, source_layers: tuple[str, ...] | None = None) -> str:
     """The dbt selector that names an asset and everything downstream of it."""
-    if is_source_layer(key):
+    is_source = is_source_layer(key) if source_layers is None else key.split(".")[0] in source_layers
+    if is_source:
         # dbt does not match a raw source by its warehouse key alone. The source: selector is
         # what expands from a source node into the models that read it.
         return f"source:{key}"
@@ -130,13 +131,22 @@ def _invoke(
     layout: ShadowEstate,
     project_dir: Path,
     artifacts_dir: Path,
+    dbt_target: str = "shadow",
+    source_env_vars: tuple[str, ...] = (
+        "TWIN_SHADOW_RAW_PG_SCHEMA",
+        "TWIN_SHADOW_RAW_EVENTS_SCHEMA",
+    ),
 ) -> BuildOutcome:
     environment = dict(os.environ)
+    # The tools image has a legacy commerce default for DBT_PROFILES_DIR. A target's
+    # project and profile are one contract; letting the container default leak here makes
+    # dbt fail before it runs and can turn passthrough views into false "identical" probes.
+    environment["DBT_PROFILES_DIR"] = str(project_dir.resolve())
     environment["TWIN_SHADOW_SCHEMA"] = layout.schema
     # dbt's source() calls must resolve into the same disposable namespace as rebuilt models.
     # The source declarations default back to raw_pg/raw_events for normal dev builds.
-    environment["TWIN_SHADOW_RAW_PG_SCHEMA"] = layout.schema
-    environment["TWIN_SHADOW_RAW_EVENTS_SCHEMA"] = layout.schema
+    for variable in source_env_vars:
+        environment[variable] = layout.schema
     completed = subprocess.run(
         command,
         cwd=project_dir,
@@ -160,6 +170,11 @@ def probe_model(
     artifacts_dir: Path,
     key: str,
     dry_run: bool = False,
+    dbt_target: str = "shadow",
+    source_env_vars: tuple[str, ...] = (
+        "TWIN_SHADOW_RAW_PG_SCHEMA",
+        "TWIN_SHADOW_RAW_EVENTS_SCHEMA",
+    ),
 ) -> BuildOutcome:
     """Build one model on its own, with every other model healthy.
 
@@ -177,7 +192,7 @@ def probe_model(
         "dbt",
         "run",
         "--target",
-        "shadow",
+        dbt_target,
         "--select",
         model_name(key),
         "--target-path",
@@ -186,7 +201,15 @@ def probe_model(
     )
     if dry_run:
         return BuildOutcome(command=command, returncode=0, results=(), stderr="")
-    return _invoke(command, graph, layout, project_dir, artifacts_dir)
+    return _invoke(
+        command,
+        graph,
+        layout,
+        project_dir,
+        artifacts_dir,
+        dbt_target,
+        source_env_vars,
+    )
 
 
 def rebuild_downstream(
@@ -195,6 +218,12 @@ def rebuild_downstream(
     project_dir: Path,
     artifacts_dir: Path,
     dry_run: bool = False,
+    source_layers: tuple[str, ...] = (),
+    dbt_target: str = "shadow",
+    source_env_vars: tuple[str, ...] = (
+        "TWIN_SHADOW_RAW_PG_SCHEMA",
+        "TWIN_SHADOW_RAW_EVENTS_SCHEMA",
+    ),
 ) -> BuildOutcome:
     """Run the real dbt project against the shadow estate.
 
@@ -202,12 +231,12 @@ def rebuild_downstream(
     downstream is rebuilt, and the faulted copy is left exactly as the fault made it. Were it
     included, dbt would rebuild it from the real source and quietly undo the fault.
     """
-    selector = _selector(layout.faulted)
+    selector = _selector(layout.faulted, source_layers or None)
     command = (
         "dbt",
         "build",
         "--target",
-        "shadow",
+        dbt_target,
         "--select",
         f"{selector}+",
         "--exclude",
@@ -218,4 +247,12 @@ def rebuild_downstream(
     )
     if dry_run:
         return BuildOutcome(command=command, returncode=0, results=(), stderr="")
-    return _invoke(command, graph, layout, project_dir, artifacts_dir)
+    return _invoke(
+        command,
+        graph,
+        layout,
+        project_dir,
+        artifacts_dir,
+        dbt_target,
+        source_env_vars,
+    )
