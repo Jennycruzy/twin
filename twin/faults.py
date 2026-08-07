@@ -29,7 +29,7 @@ DEGRADED = "degraded"
 BY_COLUMN = "column"
 BY_TABLE = "table"
 
-# Layers that ingestion lands rather than dbt building them. Stage 4 redirects dbt's source()
+# Layers that ingestion lands rather than dbt building them. Verification redirects dbt's source()
 # schemas into the disposable shadow schema and creates passthrough views for these tables, so
 # a source fault can be executed with the same isolation as a model fault.
 SOURCE_LAYERS = ("raw_pg", "raw_events")

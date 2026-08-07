@@ -4,7 +4,7 @@ A rebuilt warehouse is only half of what a failure means. The other half is whet
 things people actually look at still answer — and those are the queries in
 ``estate/ingest/queries/``, the same ones the workload executes on every ``make estate`` and
 the same ones DataHub's usage statistics were counted from. Nothing here is written for the
-demonstration; the queries existed before Stage 4 did.
+demonstration; the queries existed before the verifier did.
 
 Each query is re-pointed at the shadow schema and run as ``twin_shadow``, which can read but
 cannot write. A query that fails does so because the relation it wants is missing or a

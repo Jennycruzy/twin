@@ -1,4 +1,4 @@
-# The test suite, on every push.
+# The repository quality gate, on every push.
 #
 # Installing from requirements.txt rather than reusing a prebuilt image is deliberate. The
 # failure this is here to catch is exactly that drift: a dependency added to requirements.txt
@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  pytest:
+  quality:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -34,5 +34,5 @@ jobs:
       - name: Install the declared dependencies
         run: pip install -r requirements.txt
 
-      - name: Run the tests
-        run: python -m pytest
+      - name: Run the quality gate
+        run: python -m twin.gate

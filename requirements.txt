@@ -7,7 +7,7 @@
 dbt-core==1.12.0
 dbt-postgres==1.11.0
 
-# Twin's own execution layer (Stage 4) talks to Postgres directly rather than through dbt,
+# Twin's own verification layer talks to Postgres directly rather than through dbt,
 # because it needs to run statements dbt has no concept of (revoking grants, dropping
 # columns) and to capture the real error the warehouse returns.
 psycopg[binary]==3.2.12
@@ -15,7 +15,7 @@ psycopg[binary]==3.2.12
 # DataHub: ingestion sources for the estate, SDK for entity emission
 acryl-datahub[datahub-rest,dbt,postgres]==1.7.0
 
-# The official DataHub MCP server. Stage 1 reads the estate exclusively through this.
+# The official DataHub MCP server. Catalog reads use this interface exclusively.
 mcp-server-datahub==0.6.0
 
 # Estate generation and pipeline internals

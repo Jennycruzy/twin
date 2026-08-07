@@ -59,7 +59,7 @@ class CatalogScope:
 
 @dataclass(frozen=True)
 class TwinTarget:
-    """All estate-specific inputs needed by the generic Twin stages."""
+    """All estate-specific inputs needed by the generic Twin commands."""
 
     name: str
     catalog: CatalogScope
@@ -131,54 +131,54 @@ def _run(command: list[str], target: TwinTarget, cwd: Path | None = None) -> Non
     subprocess.run(command, cwd=(cwd or Path.cwd()).resolve(), env=environment, check=True)
 
 
-def run_target_stage(stage: str, target: TwinTarget) -> int:
+def run_target_command(command: str, target: TwinTarget) -> int:
     """Build one target through its declared adapter, without shell interpolation."""
-    if stage in {"seed", "estate"}:
+    if command in {"seed", "estate"}:
         _run([sys.executable, "-m", target.seed_module], target)
-    if stage == "seed":
+    if command == "seed":
         return 0
 
-    if stage in {"build", "estate"}:
+    if command in {"build", "estate"}:
         _run(["dbt", "build", "--target", "dev"], target, target.dbt_project)
         _run(["dbt", "docs", "generate", "--target", "dev", "--no-compile"], target, target.dbt_project)
-    if stage == "build":
+    if command == "build":
         return 0
 
-    if stage in {"ingest", "estate"}:
+    if command in {"ingest", "estate"}:
         _run(["datahub", "ingest", "-c", str(target.postgres_recipe)], target)
         _run(["datahub", "ingest", "-c", str(target.dbt_recipe)], target)
         _run([sys.executable, "-m", target.metadata_module], target)
-    if stage == "ingest":
+    if command == "ingest":
         return 0
 
-    if stage in {"workload", "estate"}:
+    if command in {"workload", "estate"}:
         _run([sys.executable, "-m", target.workload_module], target)
-    if stage == "workload":
+    if command == "workload":
         return 0
 
-    if stage == "estate":
+    if command == "estate":
         return 0
-    if stage == "verify":
+    if command == "verify":
         _run([sys.executable, "-m", target.verify_module], target)
         return 0
-    if stage == "scenarios":
+    if command == "scenarios":
         scenarios = sorted(target.scenario_dir.glob("*.yml"))
         if not scenarios:
             raise ValueError(f"target {target.name!r} has no scenarios in {target.scenario_dir}")
         for scenario in scenarios:
             _run([sys.executable, "-m", "twin.run", "--target", target.name, str(scenario)], target)
         return 0
-    raise ValueError(f"unknown target stage: {stage}")
+    raise ValueError(f"unknown target command: {command}")
 
 
 def main(argv: list[str] | None = None) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(description="Run a declared Twin estate adapter.")
-    parser.add_argument("stage", choices=("seed", "build", "ingest", "workload", "estate", "verify", "scenarios"))
+    parser.add_argument("command", choices=("seed", "build", "ingest", "workload", "estate", "verify", "scenarios"))
     parser.add_argument("--target", default=None)
     args = parser.parse_args(argv)
-    return run_target_stage(args.stage, load_target(args.target))
+    return run_target_command(args.command, load_target(args.target))
 
 
 if __name__ == "__main__":

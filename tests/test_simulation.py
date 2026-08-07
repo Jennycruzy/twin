@@ -97,7 +97,7 @@ def test_a_column_drop_must_name_a_column(tmp_path):
 
 
 def test_a_fault_on_a_raw_source_is_accepted(tmp_path):
-    """The shadow source override makes a landed source executable by Stage 4."""
+    """The shadow source override makes a landed source executable by the verifier."""
     body = (
         'name: null_at_source\nfault:\n  kind: null_out_column\n  asset: raw_pg.orders\n'
         '  column: merchant_id\n  at: "05:30"\n'

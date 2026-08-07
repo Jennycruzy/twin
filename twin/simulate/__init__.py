@@ -1,11 +1,10 @@
-"""Stage 2 — Simulate.
+"""Deterministic fault propagation.
 
 A scenario declares a fault. Simulation propagates it across the estate graph and returns
 an event-ordered timeline: what breaks, in what order, and why.
 
-Only the slice Stage 4 needs to grade itself is built here — one fault kind, propagated at
-column grain. The full propagation model, the remaining scenarios and the paging lists are
-Stage 2 proper, and this package grows into them rather than being replaced.
+The same propagation model drives both scenario prediction and the fragility sweep, so a
+score can be checked against the verifier that executes it.
 """
 
 from __future__ import annotations

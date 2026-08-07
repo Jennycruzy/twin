@@ -1,4 +1,4 @@
-"""The connection Stage 4 executes through.
+"""The connection used by the verifier.
 
 Every statement Twin sends to the warehouse passes :func:`twin.verify.guard.assert_safe`
 first. Not most statements, and not the ones a caller remembered to check — the guard lives
@@ -42,7 +42,7 @@ class Credentials:
 
     @classmethod
     def shadow_role(cls) -> "Credentials":
-        """The Stage 4 role. Deliberately not the role dbt builds the estate with."""
+        """The shadow role. Deliberately not the role dbt uses to build the estate."""
         return cls(
             host=os.environ.get("WAREHOUSE_HOST", "warehouse"),
             port=int(os.environ.get("WAREHOUSE_PORT", "5432")),
@@ -62,7 +62,7 @@ class Credentials:
 class QueryFailure:
     """A statement the warehouse refused, kept verbatim.
 
-    The database's own error is the evidence Stage 4 grades itself against, so it is
+    The database's own error is the evidence the verifier grades itself against, so it is
     recorded as returned rather than summarised into a category.
     """
 

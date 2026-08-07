@@ -1,6 +1,6 @@
 """The shadow estate: a disposable copy of the platform with one thing genuinely broken.
 
-Stage 4's claim is that Twin does not ask you to trust a simulation. Making that true means
+The verifier's claim is that Twin does not ask you to trust a simulation. Making that true means
 the fault has to be executed against a real warehouse and the real downstream models have to
 be rebuilt against it — which means somewhere there must be a copy of the estate it is safe
 to break.
@@ -158,7 +158,7 @@ def _apply_fault(
 ) -> None:
     """Execute the declared fault against the shadow copy.
 
-    The column list comes from the graph Stage 1 read, so a scenario naming a column that
+    The column list comes from the catalog graph, so a scenario naming a column that
     does not exist fails here rather than silently producing a copy identical to production
     and a verification that grades nothing.
     """

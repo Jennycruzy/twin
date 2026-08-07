@@ -1,6 +1,6 @@
 """The materialised estate graph — Twin's internal picture of the platform.
 
-Stage 1 produces exactly one thing: an :class:`EstateGraph`. Every later stage consumes it
+The catalog reader produces exactly one thing: an :class:`EstateGraph`. Every later command consumes it
 and nothing else in the pipeline talks to the catalog, so simulation and scoring can be
 exercised against a graph loaded from disk with no DataHub instance anywhere near them.
 

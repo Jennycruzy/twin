@@ -10,7 +10,7 @@ README records rather than papers over.
 The server is spawned as a stdio subprocess and speaks the same protocol it would speak to
 any other client. Six tools are exposed against open-source DataHub: ``search``,
 ``get_entities``, ``get_lineage``, ``get_lineage_paths_between``, ``list_schema_fields`` and
-``get_dataset_queries``. This module wraps the four Stage 1 needs and does nothing clever
+``get_dataset_queries``. This module wraps the catalog reads Twin needs and does nothing clever
 with the rest.
 
 Calls are issued concurrently under a bounded semaphore. Materialising the estate at column

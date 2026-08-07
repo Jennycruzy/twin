@@ -1,4 +1,4 @@
-"""Stage 5: write the fragility dimension into DataHub, prove it, or remove it.
+"""Write Twin's dimensions into DataHub, prove them, or remove them.
 
     python -m twin.write              define the properties and write every score
     python -m twin.write --prove      read the values back over MCP and print them
@@ -6,8 +6,7 @@
 
 ``--prove`` is the one that matters. Writing to a catalog and then reading back through the
 same SDK proves only that the SDK is self-consistent. Reading back over MCP proves the score
-is visible through the interface another agent would actually use to find it, which is the
-entire claim Stage 5 exists to support.
+is visible through the interface another agent would actually use to find it.
 """
 
 from __future__ import annotations

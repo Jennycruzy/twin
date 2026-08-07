@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Run the test suite before anything is pushed.
+# Run the repository quality gate before anything is pushed.
 #
 # The tests workflow in .github/workflows/tests.yml is the same check on GitHub's runners.
 # This one runs on the machine doing the pushing, so the suite gates every push whether or
@@ -17,9 +17,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 
-printf '\033[1;34m==>\033[0m Running tests before push.\n'
+printf '\033[1;34m==>\033[0m Running the quality gate before push.\n'
 
-if ! docker compose run --rm -T twin python -m pytest; then
-  printf '\n\033[1;31m==>\033[0m Tests failed. Push refused.\n'
+if ! docker compose run --rm -T twin python -m twin.gate; then
+  printf '\n\033[1;31m==>\033[0m Quality gate failed. Push refused.\n'
   exit 1
 fi

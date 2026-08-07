@@ -1,12 +1,11 @@
-"""Stage 4 — Verify.
+"""Real warehouse verification.
 
 Twin executes the fault it simulated against a real warehouse, rebuilds the real downstream
 models against it, re-runs the real consumer queries, and grades its own prediction against
 what actually broke.
 
-This is the stage the project stands on. A simulator that proves itself against a real dbt
-run is a different class of thing from one that does not, and everything else here is
-cuttable before it.
+The verifier is the evidence boundary: a simulator that proves itself against a real dbt run
+is a different class of thing from one that does not.
 
 Safety is structural rather than conventional: execution happens as a role that owns nothing
 in the estate, inside a schema carrying a non-configurable prefix, behind a guard that

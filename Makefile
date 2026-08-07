@@ -3,7 +3,7 @@
 # Every target announces what it is about to do, reports what happened, and exits non-zero
 # on failure. Nothing here half-succeeds quietly.
 #
-# Targets are added as the stages they drive are built. If a target is not in `make help`,
+# Targets are added when they are usable. If a target is not in `make help`,
 # it does not exist yet — there are no placeholders in this file.
 
 SHELL := /bin/bash
@@ -87,7 +87,7 @@ verify-estate: ## Prove the estate is real (prints a table, exits non-zero on fa
 	@$(SAY) "Verifying the $(TARGET) estate against DataHub."
 	@$(RUN) python -m twin.target verify --target $(TARGET)
 
-# ------------------------------------------------------------------ stage 1: read
+# ------------------------------------------------------------------ read
 
 .PHONY: read
 read: ## Read the estate from DataHub over MCP and cache the graph
@@ -98,14 +98,14 @@ read: ## Read the estate from DataHub over MCP and cache the graph
 graph: ## Print the cached estate graph without touching DataHub
 	@$(RUN) python -m twin.read --target $(TARGET) --cached
 
-# ------------------------------------------------------------------ stage 4: verify
+# ------------------------------------------------------------------ verify
 
 SCENARIO ?= scenarios/fx_rate_column_drop.yml
 TARGET ?= commerce
 
 .PHONY: run
 run: ## Run one scenario end to end (SCENARIO=scenarios/<name>.yml)
-	@$(SAY) "Running $(TARGET):$(SCENARIO) through stages 1-4."
+	@$(SAY) "Running $(TARGET):$(SCENARIO) through simulation and verification."
 	@$(RUN) python -m twin.run --target $(TARGET) $(SCENARIO)
 
 .PHONY: incidents
@@ -129,14 +129,14 @@ campaign: ## Rank context-integrity experiments (CAMPAIGN_EXECUTE=1 runs the top
 	@$(SAY) "Planning the deterministic $(TARGET) context-integrity campaign."
 	@$(RUN) python -m twin.campaign --target $(TARGET) $(if $(filter 1,$(CAMPAIGN_EXECUTE)),--execute,)
 
-# ------------------------------------------------------------------ stage 3: score
+# ------------------------------------------------------------------ score
 
 .PHONY: score
 score: ## Rank the estate by fragility (knockout sweep)
 	@$(SAY) "Sweeping every asset and scoring fragility."
 	@$(RUN) python -m twin.score --target $(TARGET)
 
-# ------------------------------------------------------------------ stage 5
+# ------------------------------------------------------------------ catalog
 
 .PHONY: writeback prove-writeback unwrite
 writeback: ## Write fragility scores into DataHub as structured properties
@@ -156,6 +156,18 @@ unwrite: ## Remove everything Twin wrote to DataHub
 .PHONY: examples
 examples: ## Regenerate examples/ from real runs (needs the stack up; ~7 min)
 	@./ops/capture-examples.sh
+
+.PHONY: repair
+REPAIR_OUTPUT_DIR ?= examples/repair-prs
+REPAIR_SCENARIO ?=
+repair: ## Generate an evidence-backed catalog repair proposal
+	@$(SAY) "Generating a catalog repair proposal for $(TARGET)."
+	@$(RUN) python -m twin.repair --target $(TARGET) --output-dir $(REPAIR_OUTPUT_DIR) $(if $(REPAIR_SCENARIO),--scenario $(REPAIR_SCENARIO),)
+
+.PHONY: gate
+gate: ## Run repository invariants, target validation, determinism checks and tests
+	@$(SAY) "Running the repository quality gate."
+	@$(RUN) python -m twin.gate
 
 # ------------------------------------------------------------------ tests
 

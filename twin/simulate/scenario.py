@@ -99,7 +99,7 @@ def load_scenario(path: Path) -> Scenario:
     if kind not in KINDS:
         raise ScenarioError(
             f"{path}: fault kind {kind!r} cannot be executed. "
-            f"Stage 4 knows how to run: {', '.join(sorted(KINDS))}"
+            f"The verifier knows how to run: {', '.join(sorted(KINDS))}"
         )
 
     asset = str(_require(fault_payload, "asset", f"{path}: fault"))

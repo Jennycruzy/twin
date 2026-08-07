@@ -1,6 +1,6 @@
 """Rebuild the downstream estate against the faulted shadow copy, for real.
 
-This is the part that makes Stage 4 evidence rather than argument. dbt runs the actual
+This is the part that makes verification evidence rather than argument. dbt runs the actual
 project — the same models, the same tests, the same SQL that built the estate — against a
 warehouse where one column genuinely no longer exists. What fails, fails because PostgreSQL
 refused it, and the error text Twin reports is the error PostgreSQL returned.

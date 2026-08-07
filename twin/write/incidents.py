@@ -1,8 +1,8 @@
-"""Raising the failures Stage 4 proved as DataHub incidents.
+"""Raise failures proved by the verifier as DataHub incidents.
 
 A fragility score is a prediction about what would happen. An incident is a statement that
 something *did* happen, and Twin is in the unusual position of being able to make that
-statement honestly: Stage 4 executed the fault against a real warehouse, rebuilt the
+statement honestly: the verifier executed the fault against a real warehouse, rebuilt the
 downstream models for real, and recorded PostgreSQL's own error text for every asset that
 broke. The incidents raised here carry that error text verbatim.
 
@@ -77,7 +77,7 @@ def raise_for(
     urns_for: object,
     provenance: str,
 ) -> tuple[RaisedIncident, ...]:
-    """Raise an incident for every asset Stage 4 *observed* failing.
+    """Raise an incident for every asset the verifier *observed* failing.
 
     ``urns_for`` maps a logical key to the dataset URNs it folds. Assets with no URN are
     skipped rather than invented — an incident needs something to attach to. An incident is
@@ -181,7 +181,7 @@ class IncidentSweep:
     would be claiming a clean catalog it never checked.
 
     ``unreachable`` carries the asset *and the error*, because the error is the evidence. The
-    same reasoning as Stage 4 keeping PostgreSQL's own message rather than a category: an
+    same reasoning as the verifier keeping PostgreSQL's own message rather than a category: an
     operator who is told a sweep failed can do nothing with that, and one who is shown what
     the catalog said can.
     """

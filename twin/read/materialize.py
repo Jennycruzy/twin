@@ -1,4 +1,4 @@
-"""Stage 1 — read the estate out of DataHub and assemble it into a graph.
+"""Read the estate out of DataHub and assemble it into a graph.
 
 The work is four passes. Discover every entity Twin models, fetch full metadata for each,
 fold catalog entities into logical assets, then resolve dependencies at table grain and

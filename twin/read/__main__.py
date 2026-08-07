@@ -1,7 +1,7 @@
 """Read the estate and cache it: ``python -m twin.read``.
 
 Prints what was read and where it landed. The last line is the summary line every later
-stage echoes, so a nightly log shows at a glance whether the platform changed.
+command echoes, so a nightly log shows at a glance whether the platform changed.
 """
 
 from __future__ import annotations
@@ -79,8 +79,8 @@ def _append_history(graph: EstateGraph, path: Path) -> None:
     """Append one line describing this read to the nightly history.
 
     The fragility trend is only real if the runs actually happened, so history accumulates
-    one measured line per run and is never generated retrospectively. Later stages widen
-    the record — Stage 3 appends to its own file alongside this one — but the shape stays
+    one measured line per run and is never generated retrospectively. Later commands widen
+    the record alongside this one, but the shape stays
     append-only, and a line is written when a read succeeds and not otherwise.
 
     Each line also carries the commit that produced it, so a record that disagrees with a

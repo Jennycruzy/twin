@@ -4,7 +4,7 @@ Three operations, and the third is not optional. Twin writes into a catalog it d
 which means every property it defines and every value it assigns has to be removable by the
 tool that created it. A judge will run this twice. Leaving residue in someone's catalog is
 the write-back equivalent of not tearing down a shadow schema, and Twin already refuses to do
-that in Stage 4.
+that in the verifier.
 
 Removal is scoped by the ``twin_`` prefix and by nothing else — not by a list of URNs held in
 memory, not by a manifest file that can drift from reality. If Twin wrote it, its id starts

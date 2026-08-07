@@ -1,8 +1,8 @@
 """Tests for the incidents Twin raises against proven failures.
 
 The rule under test is the one that separates an incident from a prediction: Twin may only
-raise an incident for something it *observed*. Stage 2 predicts, Stage 4 executes, and only
-Stage 4's observations are allowed to reach the catalog. A tool that filed incidents for
+raise an incident for something it *observed*. Prediction runs first, verification executes,
+and only observed failures are allowed to reach the catalog. A tool that filed incidents for
 predictions would be filling somebody's estate with alerts for things that did not happen,
 and no amount of accuracy elsewhere would make that acceptable.
 """
@@ -203,7 +203,7 @@ def test_an_unreadable_asset_is_reported_not_treated_as_clean():
 
 
 def test_an_unreadable_asset_keeps_the_reason_it_could_not_be_read():
-    """The error is the evidence, the same way PostgreSQL's is in Stage 4."""
+    """The error is the evidence, the same way PostgreSQL's is in verification."""
     catalog = FakeCatalog()
     catalog.graph = FailingGraph()
     (_, error), = raised_on(catalog, ("urn:li:dataset:(x,y,PROD)",)).unreachable

@@ -251,7 +251,7 @@ services:
   # ---------------------------------------------------------------- warehouse
 
   # The analytical warehouse. The demo estate is seeded here and built by dbt.
-  # Stage 4 clones affected slices into twin_shadow_* schemas in this same database
+  # Verification clones affected slices into twin_shadow_* schemas in this same database
   # and executes real faults against them; see docs/SAFETY.md.
   warehouse:
     <<: *datahub-common
@@ -304,7 +304,7 @@ services:
       WAREHOUSE_DB: ${WAREHOUSE_DB:-warehouse}
       WAREHOUSE_USER: ${WAREHOUSE_USER:-twin}
       WAREHOUSE_PASSWORD: ${WAREHOUSE_PASSWORD:-twin}
-      # Stage 4 executes as a role that owns nothing in the estate. See docs/SAFETY.md.
+      # Verification executes as a role that owns nothing in the estate. See docs/SAFETY.md.
       WAREHOUSE_SHADOW_USER: ${WAREHOUSE_SHADOW_USER:-twin_shadow}
       WAREHOUSE_SHADOW_PASSWORD: ${WAREHOUSE_SHADOW_PASSWORD:-twin_shadow}
       TWIN_SEED: ${TWIN_SEED:-20260805}

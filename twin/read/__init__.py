@@ -1,10 +1,9 @@
-"""Stage 1 — Read.
+"""Read and materialise an estate graph.
 
 The estate lives in DataHub. Twin reads it through DataHub's official MCP server and turns
 it into an :class:`~twin.read.model.EstateGraph`, which is the only thing the rest of the
-pipeline consumes. Every later stage takes a graph and never a catalog connection, so
-simulation, scoring and verification can all be exercised against a cached graph with no
-DataHub instance in sight.
+pipeline consumes. Simulation, scoring and verification take a graph rather than a catalog
+connection, so they can run against a cached read with no DataHub instance in sight.
 """
 
 from __future__ import annotations
@@ -56,5 +55,5 @@ async def read_estate(
 def read_estate_sync(
     url: str | None = None, concurrency: int = 8, scope: CatalogScope | None = None
 ) -> EstateGraph:
-    """Synchronous entry point for the stages that are not async."""
+    """Synchronous entry point for callers that are not async."""
     return asyncio.run(read_estate(url, concurrency=concurrency, scope=scope))

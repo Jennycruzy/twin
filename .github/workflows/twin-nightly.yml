@@ -2,13 +2,13 @@
 #
 # Twin's fragility trend is a claim about change over time, and that claim is only worth
 # anything if the runs actually happened. Accumulated history cannot be manufactured later,
-# so this workflow is scheduled the day Stage 1 starts producing output rather than the week
+# so this workflow is scheduled from the first working read rather than the week
 # of a deadline: each night it stands the whole stack up from nothing, builds the estate,
 # reads it back through the DataHub MCP server, and appends one measured line to
 # examples/history/nightly.jsonl.
 #
-# The record widens as stages land — fragility scores join it when Stage 3 exists — but it
-# stays append-only, and a line is written only when a run genuinely succeeded.
+# The record can gain additional measured fields over time, but it stays append-only and a
+# line is written only when a run genuinely succeeded.
 
 name: nightly
 

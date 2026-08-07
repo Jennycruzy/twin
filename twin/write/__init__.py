@@ -1,4 +1,4 @@
-"""Stage 5: the fragility dimension Twin adds to DataHub.
+"""Write Twin's measured dimensions back to DataHub.
 
 Written through the SDK because the MCP server exposes no write tool, and read back over MCP
 because that is the interface the claim is about. See :mod:`twin.write.properties`.

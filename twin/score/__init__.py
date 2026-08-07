@@ -1,4 +1,4 @@
-"""Stage 3 — Score.
+"""Fragility scoring.
 
 Fragility per asset, built from the knockout sweep rather than from graph shape, so that
 every score is a claim shadow execution can be pointed at.

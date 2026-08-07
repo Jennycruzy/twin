@@ -7,7 +7,7 @@ most important component in the system, not a footnote to it.
 
 This document states plainly what Twin runs, where it runs, and what stops it running
 anywhere else. It describes the state of the repository as built. Where a guard belongs to
-a stage that does not exist yet, it says so rather than describing an intention as though
+a capability that does not exist yet, it says so rather than describing an intention as though
 it were a fact.
 
 ## What Twin executes
@@ -30,7 +30,7 @@ Every one of those statements passes the execution boundary described below befo
 sent. `make dry-run` prints the complete list for a scenario and executes none of it.
 
 Fault kinds the execution layer cannot run — revoking access is the notable one, because
-Stage 4 owns everything it creates and cannot convincingly revoke its own privileges — are
+The verifier owns everything it creates and cannot convincingly revoke its own privileges — are
 rejected by the scenario loader rather than silently accepted. A fault Twin cannot execute
 would produce a prediction nothing could grade.
 
@@ -42,8 +42,8 @@ defined in `estate/warehouse/init/01-roles.sql`, which runs automatically on fir
 | Role | Used by | Privileges |
 |---|---|---|
 | `twin` | The estate build (seed + dbt) | Owns every estate object |
-| `twin_reader` | Stage 1 read, Stage 3 scoring, the consumer workload | `SELECT` on the estate. No write privilege anywhere in the database |
-| `twin_shadow` | Stage 4 execution | `SELECT` on the estate, and `CREATE` on the database so it can make its own shadow schemas. Owns nothing in the estate |
+| `twin_reader` | Catalog reads and the consumer workload | `SELECT` on the estate. No write privilege anywhere in the database |
+| `twin_shadow` | Shadow verification | `SELECT` on the estate, and `CREATE` on the database so it can make its own shadow schemas. Owns nothing in the estate |
 
 `twin_reader` is not a convention that Twin follows voluntarily. The consumer workload in
 `estate/ingest/workload.py` connects as `twin_reader` today, which means the role's read
@@ -117,7 +117,7 @@ does not control, and the modifying-CTE and `EXPLAIN ANALYZE` forms above.
 
 ### What the boundary does not cover
 
-dbt's own connection does not pass through the guard. Stage 4 invokes dbt as a subprocess and
+dbt's own connection does not pass through the guard. The verifier invokes dbt as a subprocess and
 it opens its own connection from `estate/dbt/profiles.yml`, so every statement dbt issues —
 which is most of the SQL a scenario causes to run — is constrained by the role model alone.
 This is deliberate: dbt's SQL is generated from the estate's own models, and interposing on

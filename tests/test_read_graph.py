@@ -1,6 +1,6 @@
 """Tests for the estate graph and the fold that produces it.
 
-Stage 1's contract with every later stage is the graph, so these tests pin the properties
+The catalog reader's contract with every later command is the graph, so these tests pin the properties
 the rest of the pipeline is entitled to assume: assets are folded from their catalog
 entities, ordering never leaks into output, and the fingerprint tracks content and nothing
 else. A fingerprint that changed between two identical reads would silently invalidate both

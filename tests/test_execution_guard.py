@@ -5,7 +5,7 @@ that matters most. It is written to be read by someone deciding whether to trust
 the cases below are the ones a reviewer would think to try, including the statement that
 would drop a real estate table.
 
-The guard is the second of two layers. The first is PostgreSQL itself — Stage 4 connects as
+The guard is the second of two layers. The first is PostgreSQL itself — verification connects as
 a role that owns nothing in the estate, so a dropped guard would still not permit any of the
 statements refused here. Both exist because they fail differently. See docs/SAFETY.md.
 """

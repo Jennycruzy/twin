@@ -1,6 +1,6 @@
 """On-disk cache for materialised estate graphs, keyed by fingerprint.
 
-Reading the estate at column grain is several hundred MCP round trips. Later stages need
+Reading the estate at column grain is several hundred MCP round trips. Later commands need
 the same graph repeatedly — a scenario run, a knockout sweep over every asset, a CI gate —
 and re-reading it each time would make those slow for no benefit, because the graph does
 not change while they run.

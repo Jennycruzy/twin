@@ -5,7 +5,7 @@ the count. That measure is cheap, and on this estate it is wrong: `raw_pg.orders
 more assets than `raw_pg.fx_rates` and is the less fragile of the two, because it has a
 standby and fx_rates does not.
 
-So the sweep does not count edges. It asks the propagation model the same question Stage 4
+So the sweep does not count edges. It asks the propagation model the same question the verifier
 executes for real — *what happens when this asset is gone* — once per asset, and reads the
 answer off the timeline. The consequence is that scoring and verification share one model:
 a knockout that claims eleven assets fall over is a claim shadow execution can be pointed at

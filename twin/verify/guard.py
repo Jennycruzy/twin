@@ -65,7 +65,7 @@ READ_ONLY = "read_only"
 DESTRUCTIVE = "destructive"
 
 # Destructive forms Twin is allowed to issue, each paired with the object it acts on. The
-# list is short on purpose: it grows only when a stage genuinely needs a new form, and each
+# list is short on purpose: it grows only when the verifier genuinely needs a new form, and each
 # addition is a decision someone made rather than a pattern that happened to match.
 _DESTRUCTIVE = (
     re.compile(rf"^create\s+schema\s+(?:if\s+not\s+exists\s+)?({_IDENTIFIER})", re.IGNORECASE),

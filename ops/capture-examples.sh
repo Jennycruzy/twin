@@ -90,7 +90,7 @@ capture "$OUT/reports/fragility-scorecard.txt" \
 	"Fragility ranking across the whole estate" \
 	make --no-print-directory score
 capture "$OUT/reports/estate-graph.txt" \
-	"The estate graph as Stage 1 read it over MCP" \
+	"The estate graph as read over MCP" \
 	make --no-print-directory graph
 echo
 

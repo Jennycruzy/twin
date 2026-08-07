@@ -45,7 +45,7 @@ What the knockout sweep says falls over: datasets and consumers together.
 
 The sweep does not count graph edges. It runs the propagation model once per asset with a
 `drop_asset` fault and reads the blast radius off the resulting timeline — the same model
-Stage 4 executes against a real warehouse. This is deliberate: it means a fragility score is
+The verifier executes against a real warehouse. This is deliberate: it means a fragility score is
 a claim shadow execution can be pointed at. A number derived from adjacency could not be
 checked against anything.
 

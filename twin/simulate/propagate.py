@@ -16,7 +16,7 @@ Consumers — dashboards, charts, models — read on demand and break with their
 That timing distinction is the reason the estate carries mixed materialisations and mixed
 cadences, and it is what makes a timeline more useful than a list.
 
-One honest limitation, repeated in the report Stage 4 prints: the *ordering* here is not
+One honest limitation, repeated in the verification report: the *ordering* here is not
 what shadow execution verifies. A dbt build runs the estate at once rather than over the
 following day, so verification grades which assets broke, not when. Verifying the clock
 would mean holding a warehouse for a simulated day, which Twin does not do.

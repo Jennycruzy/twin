@@ -1,7 +1,7 @@
 """The fragility dimension Twin adds to the catalog.
 
 This is the module that turns Twin from a tool that reads DataHub into one that changes it.
-Everything before Stage 5 produces a ranking that lives in this repository; a ranking in a
+Everything before write-back produces a ranking that lives in this repository; a ranking in a
 repository is a report, and reports are read by the person who ran them. A structured
 property on the asset is read by whoever opens the asset, and by any agent that asks the
 catalog what it knows — which is the claim the project is actually making.

@@ -1,6 +1,6 @@
 """Run one scenario end to end: ``make run SCENARIO=scenarios/<name>.yml``.
 
-Stages 1 through 4 in order. Read the estate, propagate the declared fault across it, execute
+Read the estate, propagate the declared fault across it, execute
 that fault for real in a shadow warehouse, and grade the prediction against what broke.
 
 The report is written to be checkable rather than impressive. Every predicted event carries
@@ -221,7 +221,7 @@ def _print_consumers(checks: Iterable[ConsumerCheck]) -> None:
 
 
 def main(argv: Iterable[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run one scenario through stages 1-4.")
+    parser = argparse.ArgumentParser(description="Run one scenario through prediction and verification.")
     parser.add_argument("scenario", type=Path, help="path to a scenario YAML file")
     parser.add_argument("--target", help="estate target name from targets/<name>.yml")
     parser.add_argument("--refresh", action="store_true", help="re-read the estate before running")

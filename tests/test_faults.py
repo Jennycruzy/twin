@@ -1,6 +1,6 @@
 """Tests for the fault vocabulary, its execution, and the paging list.
 
-The distinction these pin down is the one M4 is built on: a fault that makes an asset
+The distinction these pin down is the one the verifier relies on: a fault that makes an asset
 *unavailable* is not the same as one that leaves it present and *degraded*, and a model that
 collapses the two would be right about the loud failures and wrong about the expensive ones.
 
