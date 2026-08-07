@@ -263,10 +263,11 @@ Direct table consumers identified in the graph:
 
 ## Validation
 
-1. Apply the patch and run `dbt build` for the `{target.name}` target.
-2. Re-ingest the dbt metadata and rebuild the target graph with `make read TARGET={target.name}`.
+1. Apply the patch and run `make estate-build TARGET={target.name}`.
+2. Re-ingest the dbt metadata with `make estate-ingest TARGET={target.name}`, then rebuild the
+   target graph with `make read TARGET={target.name}`.
 3. Confirm `{source_key}.{column}` has a column edge to the expected landing fields.
-4. Re-run `make run TARGET={target.name} {scenario.path}` and compare the scorecard with the
+4. Re-run `make run TARGET={target.name} SCENARIO={scenario.path}` and compare the scorecard with the
    recorded `{scenario.name}` result. A better precision score is evidence; an unchanged score
    is also a valid result if the catalog ingestion does not derive field lineage from source
    declarations.
