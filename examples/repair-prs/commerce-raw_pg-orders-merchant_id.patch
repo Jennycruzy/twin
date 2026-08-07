@@ -1,0 +1,11 @@
+--- a/estate/dbt/models/sources.yml
++++ b/estate/dbt/models/sources.yml
+@@ -42,6 +42,8 @@
+       - name: orders
+         description: Order headers.
+         meta: {owner: priya.raghavan@example.com, team: data-platform, refresh_cadence: daily_0500, sla_hours: 6, replicated: true, criticality_tier: tier1}
++        columns:
++          - name: merchant_id
+       - name: order_items
+         description: Order lines.
+         meta: {owner: priya.raghavan@example.com, team: data-platform, refresh_cadence: daily_0500, sla_hours: 6, replicated: true, criticality_tier: tier1}
