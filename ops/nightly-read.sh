@@ -46,6 +46,9 @@ docker compose run --rm -T twin python -m twin.read --append-history "$HISTORY"
 say "scoring fragility"
 docker compose run --rm -T twin python -m twin.score --append-history "$SCORES"
 
+say "writing fragility scores back to DataHub"
+docker compose run --rm -T twin python -m twin.write
+
 if git diff --quiet -- "$HISTORY" "$SCORES"; then
   say "no new history line; the read must have failed"
   exit 1

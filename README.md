@@ -270,9 +270,9 @@ can be attributed to the estate changing or to the model changing without anyone
 explain it in a README. The two lines above stay as they are: rewriting history to make it
 tidier is the one thing an append-only record cannot do.
 
-## Stage 2: five failure modes, not five faults
+## Stage 2: six failure modes, not six faults
 
-The five scenarios in `scenarios/` are chosen so that each one fails *differently*. Five
+The six scenarios in `scenarios/` are chosen so that each one fails *differently*. Six
 variations on "delete something" would grade well and prove very little.
 
 | Scenario | Fault | Twin must predict | How reality answers |
@@ -282,6 +282,7 @@ variations on "delete something" would grade well and prove very little.
 | `fx_rate_type_regression` | column arrives as text | unavailable | cast error |
 | `merchant_id_nulled` | join key becomes null | **degraded** | builds, contents differ |
 | `orders_feed_stalls` | rows stop arriving | **degraded** | builds, three days short |
+| `merchant_id_nulled_at_source` | raw-source join key becomes null | **degraded** | builds, contents differ |
 
 The bottom two are the point of M4. **Unavailable** means the asset is not there — loud,
 alarming, comparatively easy. **Degraded** means it built successfully and is wrong: nothing
@@ -296,11 +297,11 @@ has exactly the same number of rows as production and understates three days of 
 Row counts alone called that healthy and scored a correct prediction as a false alarm.
 
 ```
-make scenarios                    # run all five
+make scenarios                    # run all six
 make run SCENARIO=scenarios/orders_feed_stalls.yml
 ```
 
-### Results across the five, executed
+### Results across the six, executed
 
 | Scenario | Isolated probe | Full refresh | Identical to production |
 |---|---|---|---|
@@ -309,9 +310,10 @@ make run SCENARIO=scenarios/orders_feed_stalls.yml
 | `fx_rate_type_regression` | 1.00 / 1.00 | 1.00 / 1.00 (14 unavailable) | 11 |
 | `orders_feed_stalls` | 1.00 / 1.00 | 1.00 / 1.00 (15 degraded) | 13 |
 | `merchant_id_nulled` | 1.00 / 1.00 | 1.00 / 1.00 (10 degraded) | 5 |
+| `merchant_id_nulled_at_source` | 1.00 / 1.00 | 0.69 / 1.00 (11 degraded) | 5 |
 
 Precision / recall. **The last column is the one to read.** It counts models rebuilt in the
-same run that came out byte-for-byte identical to production — 45 across the five scenarios,
+same run that came out byte-for-byte identical to production — 50 across the six scenarios,
 every one an opportunity to raise a false alarm that was not taken. A comparison that
 reported "different" for everything would manufacture a table of 1.00s, and that column is
 what distinguishes this from one.
@@ -330,17 +332,17 @@ required Stage 1 to resolve which column each dependency *lands on*, which DataH
 return and has to be interrogated pair by pair. It is why a read takes twelve minutes rather
 than two, and why the graph gained 71 column edges.
 
-Two things are worth stating about that, because a table of five perfect scores invites
+Two things are worth stating about that, because a table of mostly perfect scores invites
 exactly this suspicion:
 
-**The change was made generally and then re-run against all five**, not tuned until one
-number moved. It is pinned by unit tests including the fallback case, and none of the other
-four scenarios changed.
+**The change was made generally and then re-run against all six**, not tuned until one
+number moved. It is pinned by unit tests including the fallback case. The original five
+scenarios retained their scorecards; the sixth is deliberately the adversarial control.
 
-**There is now no scenario in this repository where Twin is wrong**, and that is a weaker
-position to be in, not a stronger one. The honest reading of the table above is "the model
-survives the five faults it has been tested against", not "the model is correct". The report
-prints that warning on every run that scores perfectly.
+**The sixth scenario is not a perfect score**, and that is useful evidence rather than a defect
+to hide. The honest reading of the table above is "the model survives five model-origin faults
+and exposes its over-prediction at a raw source", not "the model is correct". The report keeps
+the false alarms visible.
 
 ### Who gets paged
 
@@ -640,7 +642,7 @@ Five stages, two feedback loops, three entry points.
 
    Entry points that exist today:
      make run SCENARIO=...   one scenario — stages 1-4, report to stdout
-     make scenarios          all five, each graded
+     make scenarios          all six, each graded
      make score              stage 3 — rank the estate by fragility
      make writeback          stage 5 — write fragility into DataHub
      make prove-writeback    read it back over MCP
@@ -651,9 +653,9 @@ Five stages, two feedback loops, three entry points.
 ```
 
 The nightly job that runs today is `ops/nightly-read.sh` and
-`.github/workflows/twin-nightly.yml`, described under *The nightly read*. They verify, read
-and score. Wiring `make writeback` into them is a one-line change and is not made yet, so the
-scores in the catalog are from the last manual run rather than from last night.
+`.github/workflows/twin-nightly.yml`, described under *The nightly read*. The host job verifies,
+reads, scores and writes the current fragility properties back to DataHub. The GitHub workflow
+still records the read history only because Actions are disabled on this account.
 
 Twin has no chat interface and will not be getting one. It is invoked by a scheduler, a
 scenario file, or a CI trigger.
@@ -701,7 +703,7 @@ credentials, no paid tier.
 | `make read` | Read the estate over MCP and cache the graph |
 | `make graph` | Print the cached graph without touching DataHub |
 | `make run` | Run a scenario through stages 1-4 and grade the prediction |
-| `make scenarios` | Run all five scenarios in turn |
+| `make scenarios` | Run all six scenarios in turn |
 | `make score` | Rank every asset by fragility |
 | `make dry-run` | Print every statement a scenario would execute, execute none |
 | `make writeback` | Write fragility into DataHub as structured properties |
@@ -759,50 +761,22 @@ Honest and specific, and this list will grow rather than shrink as stages land.
 - **Stage 1 sees only what MCP exposes.** Usage statistics, column-to-column lineage and
   the ML deployment are not reachable through the interface Twin reads from — see *What the
   MCP server does not expose*. Everything Twin scores is built from what is listed there.
-- **Five fault kinds are executable**, and only those five. A fault the execution layer
-  cannot run is refused by the scenario loader rather than silently accepted, because it
-  would produce a prediction nothing can grade. Revoking access is the notable absence: Stage
-  4 executes as the owner of everything it creates, so it cannot revoke its own privileges
-  convincingly, and a simulated permission error would be exactly the kind of pretend
-  evidence this project exists to avoid.
-- **Faults execute on dbt models, not on raw sources.** dbt resolves `source()` through
-  `sources.yml`, whose schema is fixed, so a shadow copy of `raw_pg` or `raw_events` would be
-  built and never read: the models would build from production, nothing would break for the
-  reason claimed, and Stage 4 would grade a scorecard for a fault that never landed. The
-  loader refuses these by name rather than producing that scorecard. Supporting them needs a
-  shadow source override, which is not built. Found by writing a scenario against
-  `raw_pg.orders` and noticing that `stg_orders` came back identical to production.
+- **Five fault kinds are executable**, and only those five. Raw landed sources are now
+  redirectable into the disposable shadow schema, so source-origin scenarios are graded for
+  real. Revoking access is the notable absence: Stage 4 executes as the owner of everything it
+  creates, so it cannot revoke its own privileges convincingly, and a simulated permission
+  error would be exactly the kind of pretend evidence this project exists to avoid.
 - **Where column lineage is absent, damage falls back to table grain** and over-predicts.
   That is deliberate — under-predicting a quiet failure is the more expensive error — but it
   means the precision of a degrading fault depends on how completely the catalog describes
   the columns involved. This applies at the fault origin as well as at every later hop; until
   `propagate.py` was corrected it applied only after the first, so a fault on an origin with
   no column lineage predicted nothing at all.
-- **Every scenario currently scores 1.00.** Read that as "survives the five faults it has
-  been tested against", not as "correct". The control column above is the reason to believe
-  the scores at all, and a sixth fault chosen adversarially would be worth more than a sixth
-  variation on the five.
-
-  That sixth fault was attempted, against `raw_pg.orders.merchant_id` — the same fault as
-  `merchant_id_nulled`, one level upstream where the catalog is thinner. It did not produce a
-  sixth score. It produced two defects in Twin, both now fixed and both visible in the
-  history:
-
-  - Propagation fell back to table grain where column lineage was missing at every hop
-    *except the fault origin*, so a fault on a raw source predicted nothing at all. A false
-    negative with a scorecard attached to it, which is the worst shape an error here can
-    take. Fixed, with the distinction it turns on pinned by tests.
-  - Stage 4 could not execute a fault on a raw source at all, because dbt resolves `source()`
-    through `sources.yml` and would have built from production while Twin graded a fault that
-    never landed. Caught by reading the isolated phase and noticing that a model reading the
-    nulled column came back *identical to production*, which is impossible if the fault
-    arrived. The loader now refuses these by name.
-
-  This is offered as what it is. It is evidence that the verification catches Twin's own
-  errors, which is a different claim from evidence that the fragility weights are not fitted
-  to the estate — and the second claim still rests on the control column alone. The
-  adversarial scenario remains the right way to test it, and needs the source override named
-  above before it can run honestly.
+- **The five model-origin scenarios score 1.00; the raw-source adversarial scenario scores
+  0.69 precision / 1.00 recall.** The source catalog has no column lineage, so Twin correctly
+  falls back to table grain and over-predicts five unchanged models. That is the intended
+  honest result: a thin catalog creates false alarms, while the observed failures are all
+  caught. The new scenario exists specifically to expose this behavior.
 - **Verification grades what broke, not when.** The predicted timeline's ordering is not
   checked by shadow execution. See *What is and is not being claimed*.
 - **Incidents are read back through the asset, not searched for.** DataHub does not resolve
@@ -817,9 +791,9 @@ Honest and specific, and this list will grow rather than shrink as stages land.
 - **The public evidence trail is thin.** Both GitHub Actions workflows are disabled because
   Actions are unavailable on this account, so the record is a host cron and the commits it
   produces. `examples/` holds the nightly history, the estate and scoring reports, and a
-  graded transcript of every scenario — all captured from real runs by
-  `ops/capture-examples.sh` and regenerated with `make examples`, never written by hand. No
-  incidents transcript and no repair PRs.
+  graded transcript of every scenario and an incident transcript — all captured from real runs
+  by `ops/capture-examples.sh` and regenerated with `make examples`, never written by hand. No
+  repair PRs.
 
 ## License
 

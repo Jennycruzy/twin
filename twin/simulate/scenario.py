@@ -19,7 +19,7 @@ from typing import Any
 
 import yaml
 
-from twin.faults import KINDS, SOURCE_LAYERS, FaultKind, is_source_layer, kind as fault_kind
+from twin.faults import KINDS, FaultKind, kind as fault_kind
 
 # A scenario's name becomes part of the shadow schema it executes in, so it is restricted to
 # characters that are an identifier in PostgreSQL without quoting or escaping. Validating it
@@ -103,15 +103,6 @@ def load_scenario(path: Path) -> Scenario:
         )
 
     asset = str(_require(fault_payload, "asset", f"{path}: fault"))
-    if is_source_layer(asset):
-        raise ScenarioError(
-            f"{path}: {asset} is in a raw source layer ({', '.join(SOURCE_LAYERS)}), and "
-            "Stage 4 cannot execute a fault there. dbt resolves source() through sources.yml, "
-            "whose schema is fixed, so the shadow copy would be built and never read: the "
-            "models would build from production, nothing would break for the reason claimed, "
-            "and the scorecard would grade a fault that never landed. Name a dbt model instead."
-        )
-
     definition = fault_kind(str(kind))
     column = fault_payload.get("column")
     if definition.needs_column and not column:

@@ -29,11 +29,9 @@ DEGRADED = "degraded"
 BY_COLUMN = "column"
 BY_TABLE = "table"
 
-# Layers that ingestion lands rather than dbt building them. dbt resolves `source()` through
-# sources.yml, whose schema is fixed, so a shadow copy of one of these is created and then
-# never read — the fault does not reach the build at all. Stage 4 therefore cannot execute a
-# fault on them, and the scenario loader refuses one rather than grading a run in which
-# nothing broke for the reason claimed.
+# Layers that ingestion lands rather than dbt building them. Stage 4 redirects dbt's source()
+# schemas into the disposable shadow schema and creates passthrough views for these tables, so
+# a source fault can be executed with the same isolation as a model fault.
 SOURCE_LAYERS = ("raw_pg", "raw_events")
 
 

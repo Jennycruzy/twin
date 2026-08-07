@@ -44,8 +44,8 @@ capture() {
 	printf '  %-52s' "$dest"
 
 	# The command's own exit status, not the last filter's. `set -e` is disabled for this
-	# one line so that a command which legitimately fails — a scenario the loader refuses,
-	# say — is reported by this script rather than killing the whole capture.
+	# one line so that a command which legitimately fails is reported by this script rather
+	# than killing the whole capture.
 	set +e
 	{
 		header "$title"
@@ -103,6 +103,13 @@ for scenario in scenarios/*.yml; do
 done
 echo
 
+echo "Capturing one real incident run, then removing Twin's catalog state:"
+capture "$OUT/incidents/fx_rate_column_drop.txt" \
+	"fx_rate_column_drop — incidents raised for observed failures" \
+	make --no-print-directory incidents "SCENARIO=scenarios/fx_rate_column_drop.yml"
+make --no-print-directory unwrite
+echo
+
 # Not captured through header(): this one is markdown, and it writes its own provenance.
 echo "Rendering the nightly trend:"
 printf '  %-52s' "$OUT/history/README.md"
@@ -112,7 +119,7 @@ echo
 
 if [ "$FAILURES" -gt 0 ]; then
 	echo "Done, with $FAILURES failure(s) above. Those artifacts were not rewritten."
-	echo "A scenario the loader refuses is one of the ways this happens, and is not a bug."
+	echo "A failed command is not evidence, so its previous artifact was kept."
 	exit 1
 fi
 

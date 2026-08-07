@@ -29,6 +29,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from twin.faults import is_source_layer
 from twin.read.model import KIND_DATASET, EstateGraph
 from twin.verify.shadow import ShadowEstate, model_name
 
@@ -95,6 +96,15 @@ def _name_index(graph: EstateGraph) -> dict[str, str]:
     return {model_name(a.key): a.key for a in graph.of_kind(KIND_DATASET)}
 
 
+def _selector(key: str) -> str:
+    """The dbt selector that names an asset and everything downstream of it."""
+    if is_source_layer(key):
+        # dbt does not match a raw source by its warehouse key alone. The source: selector is
+        # what expands from a source node into the models that read it.
+        return f"source:{key}"
+    return model_name(key)
+
+
 def _parse_results(path: Path, index: dict[str, str]) -> tuple[NodeResult, ...]:
     if not path.exists():
         return ()
@@ -123,6 +133,10 @@ def _invoke(
 ) -> BuildOutcome:
     environment = dict(os.environ)
     environment["TWIN_SHADOW_SCHEMA"] = layout.schema
+    # dbt's source() calls must resolve into the same disposable namespace as rebuilt models.
+    # The source declarations default back to raw_pg/raw_events for normal dev builds.
+    environment["TWIN_SHADOW_RAW_PG_SCHEMA"] = layout.schema
+    environment["TWIN_SHADOW_RAW_EVENTS_SCHEMA"] = layout.schema
     completed = subprocess.run(
         command,
         cwd=project_dir,
@@ -188,7 +202,7 @@ def rebuild_downstream(
     downstream is rebuilt, and the faulted copy is left exactly as the fault made it. Were it
     included, dbt would rebuild it from the real source and quietly undo the fault.
     """
-    selector = model_name(layout.faulted)
+    selector = _selector(layout.faulted)
     command = (
         "dbt",
         "build",

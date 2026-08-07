@@ -20,7 +20,9 @@ sources:
       Nightly snapshot of the transactional PostgreSQL replica. One batch per night,
       landing between 05:00 and 06:00 UTC.
     database: warehouse
-    schema: raw_pg
+    # Stage 4 points this at the disposable shadow schema so a source fault is actually read.
+    # The default keeps the dev target on the real landed source schema.
+    schema: "{{ env_var('TWIN_SHADOW_RAW_PG_SCHEMA', 'raw_pg') }}"
     tables:
       - name: customers
         description: Customer accounts, including soft-deleted rows.
@@ -83,7 +85,9 @@ sources:
       Continuously landing event stream. Producers emit epoch milliseconds, events arrive
       out of order, and a small share of sessions never emit a terminating event.
     database: warehouse
-    schema: raw_events
+    # Both landed source systems are redirected during shadow execution. They share one
+    # disposable schema there because the table names are unique across the estate.
+    schema: "{{ env_var('TWIN_SHADOW_RAW_EVENTS_SCHEMA', 'raw_events') }}"
     tables:
       - name: page_views
         description: Page view events.

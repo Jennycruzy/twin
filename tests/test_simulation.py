@@ -96,19 +96,13 @@ def test_a_column_drop_must_name_a_column(tmp_path):
         load_scenario(scenario_file(tmp_path, body))
 
 
-def test_a_fault_on_a_raw_source_is_refused(tmp_path):
-    """dbt resolves ``source()`` to the real schema, so the shadow copy is never read.
-
-    The fault would be created, dbt would build from production, nothing would break for the
-    stated reason, and Stage 4 would grade a full scorecard against an estate where the fault
-    never landed — the failure the loader exists to prevent.
-    """
+def test_a_fault_on_a_raw_source_is_accepted(tmp_path):
+    """The shadow source override makes a landed source executable by Stage 4."""
     body = (
         'name: null_at_source\nfault:\n  kind: null_out_column\n  asset: raw_pg.orders\n'
         '  column: merchant_id\n  at: "05:30"\n'
     )
-    with pytest.raises(ScenarioError, match="raw source"):
-        load_scenario(scenario_file(tmp_path, body))
+    assert load_scenario(scenario_file(tmp_path, body)).fault.asset == "raw_pg.orders"
 
 
 def test_a_fault_on_a_model_in_a_source_named_layer_is_still_accepted(tmp_path):

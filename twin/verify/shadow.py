@@ -47,9 +47,9 @@ from twin.verify.guard import SHADOW_PREFIX
 from twin.verify.warehouse import ShadowConnection, literal, qualified
 
 # Layers that are landed by ingestion rather than built by dbt. They are sources, not
-# models: dbt reads them where they are, so the shadow estate never needs a copy. The same
-# fact is why the scenario loader refuses a fault on one — see twin.faults.SOURCE_LAYERS,
-# which is where this list lives so that the two cannot drift apart.
+# models: during shadow execution dbt is pointed at the disposable schema and these source
+# tables are represented by views onto production, except for the one faulted source.
+# The list lives in twin.faults so source planning and model classification cannot drift apart.
 _SOURCE_LAYERS = SOURCE_LAYERS
 
 
@@ -95,12 +95,19 @@ def plan(graph: EstateGraph, scenario: Scenario) -> ShadowEstate:
     origin = scenario.fault.asset
     downstream = {k for k in graph.reachable_downstream(origin) if _is_model(graph, k)}
     models = {a.key for a in graph.of_kind(KIND_DATASET) if _is_model(graph, a.key)}
+    sources = {
+        a.key
+        for a in graph.of_kind(KIND_DATASET)
+        if a.layer in _SOURCE_LAYERS
+    }
 
     return ShadowEstate(
         schema=schema_name(scenario),
         faulted=origin,
         dropped_column=scenario.fault.column,
-        passthrough=tuple(sorted(models - {origin})),
+        # Source declarations are redirected into this schema for dbt. Every source table
+        # any selected model might read therefore needs a view here, not only the faulted one.
+        passthrough=tuple(sorted((models | sources) - {origin})),
         to_rebuild=tuple(sorted(downstream)),
     )
 

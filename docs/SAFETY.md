@@ -15,7 +15,8 @@ it were a fact.
 Inside a schema named `twin_shadow_<scenario>`, and nowhere else:
 
 - `CREATE SCHEMA twin_shadow_<scenario>`, and a view onto the real relation for every estate
-  model, so the shadow estate stands up in seconds without copying any data
+  model and landed source table, so the shadow estate stands up in seconds without copying any
+  data. dbt's `source()` schemas are redirected into this disposable namespace for the run.
 - the fault the scenario declares, expressed as the shadow copy of the affected asset: a
   relation genuinely missing a column, genuinely holding the wrong type, genuinely filled
   with nulls, genuinely short of recent rows, or genuinely absent

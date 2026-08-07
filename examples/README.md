@@ -39,7 +39,10 @@ two, produced by `ops/render-history.py`, which computes nothing and adds nothin
 This is the one claim in the project that cannot be manufactured after the fact, which is why
 the raw files are kept alongside the rendering.
 
-## incidents/, repair-prs/
+## incidents/
 
-Empty. Stage 5 raises incidents and `make incidents` prints what it did, but no transcript is
-committed here yet. Repair PRs are not built — see *Limitations* in the top-level README.
+One committed transcript from `make incidents` shows incidents raised for observed failures.
+The capture script immediately runs `make unwrite`, so the live catalog is left with resolved
+incidents and no Twin property values.
+
+Repair PRs are not built — see *Limitations* in the top-level README.

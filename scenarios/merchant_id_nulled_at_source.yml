@@ -1,0 +1,25 @@
+# The merchant identifier stops being populated, at the raw source.
+#
+# The scenario declares the fault and nothing else. What breaks, how far it spreads and how
+# long it takes are Twin's answers, not the question's.
+#
+# This is the same fault as merchant_id_nulled, moved one level upstream. The pair is the
+# point: staging.stg_orders is described in the catalog down to the column, and raw_pg.orders
+# is described only as a table. Same fault, different amounts of information to reason from.
+
+name: merchant_id_nulled_at_source
+title: The merchant identifier stops being populated, at the raw source
+
+description: |
+  An upstream change stops populating the merchant key, caught in raw_pg.orders rather than
+  in staging.stg_orders. Nothing about the shape of the data changes — only its meaning.
+
+  The catalog describes the staging model's columns and does not describe the raw table's.
+  What Twin can say about the same fault therefore differs at the two levels, and what that
+  difference costs is the thing this scenario measures.
+
+fault:
+  kind: null_out_column
+  asset: raw_pg.orders
+  column: merchant_id
+  at: "05:30"

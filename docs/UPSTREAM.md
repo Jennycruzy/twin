@@ -1,16 +1,25 @@
 # Upstream findings
 
-Five things Twin found by building on DataHub's agent-facing interfaces, written as issue
-drafts ready to file. All five were discovered by using the interface for real work rather
-than by reading its documentation, and each carries a reproduction rather than an assertion.
+Five things Twin found by building on DataHub's agent-facing interfaces. All five were
+discovered by using the interface for real work rather than by reading its documentation, and
+each carries a reproduction rather than an assertion.
 
-Filing status: **not yet filed.** These are drafts.
+Filing status: **filed/attached 2026-08-07.** Three findings were attached to existing
+upstream issues to avoid duplicates; two were filed as new issues. The record is below.
+
+## Filing record
+
+1. MCP write-tool gap — evidence comment on [acryldata/mcp-server-datahub#143](https://github.com/acryldata/mcp-server-datahub/issues/143#issuecomment-5217656747).
+2. Structured-property deletion collision — new [datahub-project/datahub#18974](https://github.com/datahub-project/datahub/issues/18974).
+3. Incident readback shape — evidence comment on [acryldata/mcp-server-datahub#172](https://github.com/acryldata/mcp-server-datahub/issues/172#issuecomment-5217657059).
+4. Usage statistics unavailable over MCP — evidence comment on [acryldata/mcp-server-datahub#171](https://github.com/acryldata/mcp-server-datahub/issues/171#issuecomment-5217656908).
+5. Column lineage landing field — new [acryldata/mcp-server-datahub#197](https://github.com/acryldata/mcp-server-datahub/issues/197).
 
 ---
 
 ## 1. MCP server exposes no write tool
 
-**Repo:** `datahub-project/mcp-server-datahub`
+**Repo:** `acryldata/mcp-server-datahub`
 **Type:** feature gap / design question
 
 The server exposes six tools, and every one of them reads:
@@ -138,7 +147,7 @@ graph.execute_graphql(INCIDENTS_ON_DATASET, {'urn': dataset_urn})               
 
 ## 4. MCP exposes no usage statistics
 
-**Repo:** `datahub-project/mcp-server-datahub`
+**Repo:** `acryldata/mcp-server-datahub`
 **Type:** feature gap
 
 DataHub holds per-dataset usage statistics — real counts of query executions — and no MCP
@@ -158,7 +167,7 @@ of the six tools.
 
 ## 5. Column lineage does not return the landing column
 
-**Repo:** `datahub-project/mcp-server-datahub`
+**Repo:** `acryldata/mcp-server-datahub`
 **Type:** feature gap / performance
 
 Asking which assets consume a column answers with the downstream *datasets*, not the

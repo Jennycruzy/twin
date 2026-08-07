@@ -12,6 +12,7 @@ from twin.read.model import Asset, Edge, EstateGraph
 from twin.simulate.scenario import Fault, Scenario
 from twin.verify.consumers import repoint
 from twin.verify.guard import SHADOW_PREFIX
+from twin.verify.dbt_runner import _invoke, _selector
 from twin.verify.shadow import model_name, plan
 
 import datetime as dt
@@ -72,10 +73,10 @@ def test_the_rebuild_set_is_chosen_structurally_not_from_the_prediction():
     assert set(layout.to_rebuild) == set(estate().reachable_downstream("staging.stg_fx_rates"))
 
 
-def test_raw_sources_are_never_copied():
-    """dbt reads sources where they are, and they are never written to."""
+def test_raw_sources_are_passthroughs_except_for_the_faulted_asset():
+    """dbt sources resolve into the shadow schema, so every landed table needs a view."""
     layout = plan(estate(), scenario())
-    assert "raw_pg.fx_rates" not in layout.passthrough
+    assert "raw_pg.fx_rates" in layout.passthrough
     assert "raw_pg.fx_rates" not in layout.to_rebuild
 
 
@@ -106,6 +107,31 @@ def test_consumer_queries_are_repointed_at_the_shadow_schema():
 
 
 def test_repointing_leaves_raw_sources_alone():
-    """Raw data is never copied, so a query reading it should keep reading the real thing."""
+    """Consumer queries are redirected only for modeled assets, not landed sources."""
     sql = "select * from raw_pg.orders"
     assert repoint(sql, "twin_shadow_x") == sql
+
+
+def test_dbt_shadow_invocations_redirect_both_source_schemas(monkeypatch, tmp_path):
+    captured = {}
+
+    class Completed:
+        returncode = 0
+        stderr = ""
+
+    def fake_run(command, *, cwd, env, capture_output, text, check):
+        captured.update(env)
+        return Completed()
+
+    monkeypatch.setattr("twin.verify.dbt_runner.subprocess.run", fake_run)
+    layout = plan(estate(), scenario())
+    _invoke(("dbt", "run"), estate(), layout, tmp_path, tmp_path)
+
+    assert captured["TWIN_SHADOW_SCHEMA"] == layout.schema
+    assert captured["TWIN_SHADOW_RAW_PG_SCHEMA"] == layout.schema
+    assert captured["TWIN_SHADOW_RAW_EVENTS_SCHEMA"] == layout.schema
+
+
+def test_source_faults_use_dbts_source_selector():
+    assert _selector("raw_pg.orders") == "source:raw_pg.orders"
+    assert _selector("staging.stg_orders") == "stg_orders"
