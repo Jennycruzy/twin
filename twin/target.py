@@ -78,6 +78,17 @@ class TwinTarget:
     source_env_vars: tuple[str, ...] = ()
     dbt_target: str = "shadow"
     shadow_prefix: str = "twin_shadow_"
+    # The scenario the nightly runs for this estate, and so also the name of the standing
+    # capture that stands in as verification evidence when no dated nightly capture exists.
+    # Estate-specific, so it belongs in the estate's config rather than in the nightly script
+    # or the renderer.
+    nightly_scenario: Path | None = None
+
+    @property
+    def verification_example(self) -> Path | None:
+        if self.nightly_scenario is None:
+            return None
+        return Path("examples/verification") / f"{self.nightly_scenario.stem}.txt"
 
 
 def _path(value: str, root: Path) -> Path:
@@ -110,6 +121,11 @@ def load_target(name: str | None = None, config_dir: Path = Path("targets")) -> 
         workload=_path(str(runtime["workload"]), path.parent.parent),
         scenario_dir=_path(str(runtime.get("scenario_dir", "scenarios")), path.parent.parent),
         cache_dir=_path(str(runtime.get("cache_dir", f".twin/{selected}")), path.parent.parent),
+        nightly_scenario=(
+            _path(str(runtime["nightly_scenario"]), path.parent.parent)
+            if runtime.get("nightly_scenario")
+            else None
+        ),
         seed_module=str(runtime["seed_module"]),
         metadata_module=str(runtime["metadata_module"]),
         workload_module=str(runtime["workload_module"]),

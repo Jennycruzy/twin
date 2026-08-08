@@ -82,16 +82,21 @@ mkdir -p "$OUT/reports" "$OUT/verification" "$OUT/incidents"
 echo "Capturing examples/ from live runs. About seven minutes with the estate already built."
 echo
 
-echo "Estate and scoring:"
-capture "$OUT/reports/verify-estate.txt" \
-	"The demo estate, checked against DataHub" \
-	make --no-print-directory verify-estate
-capture "$OUT/reports/fragility-scorecard.txt" \
-	"Fragility ranking across the whole estate" \
-	make --no-print-directory score
-capture "$OUT/reports/estate-graph.txt" \
-	"The estate graph as read over MCP" \
-	make --no-print-directory graph
+# Captured per estate. Fragility scores are positions within an estate, so one estate's
+# scorecard is not evidence about another and the two are never written to the same path.
+echo "Estate and scoring, per target:"
+for target in $(ls targets/*.yml | xargs -n1 basename | sed 's/\.yml$//'); do
+	mkdir -p "$OUT/reports/$target"
+	capture "$OUT/reports/$target/verify-estate.txt" \
+		"The $target estate, checked against DataHub" \
+		make --no-print-directory verify-estate "TARGET=$target"
+	capture "$OUT/reports/$target/fragility-scorecard.txt" \
+		"Fragility ranking across the $target estate" \
+		make --no-print-directory score "TARGET=$target"
+	capture "$OUT/reports/$target/estate-graph.txt" \
+		"The $target estate graph as read over MCP" \
+		make --no-print-directory graph "TARGET=$target"
+done
 echo
 
 echo "Scenarios, each run end to end and graded:"

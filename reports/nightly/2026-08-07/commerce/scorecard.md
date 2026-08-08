@@ -1,6 +1,6 @@
 # Fragility scorecard
 
-Source artifact: `examples/reports/fragility-scorecard.txt`.
+Source artifact: `examples/reports/commerce/fragility-scorecard.txt`.
 
 ```text
 # Fragility ranking across the whole estate

@@ -76,7 +76,11 @@ def _print_top(score: Score) -> None:
 
 
 def _append_history(
-    graph: EstateGraph, scores: tuple[Score, ...], path: Path, cost_model: CostModel
+    graph: EstateGraph,
+    scores: tuple[Score, ...],
+    path: Path,
+    cost_model: CostModel,
+    target: str | None = None,
 ) -> None:
     """Append one line of measured fragility to the nightly record.
 
@@ -92,6 +96,7 @@ def _append_history(
     """
     record = {
         **provenance.stamp(),
+        "target": target,
         "scoring_config": provenance.digest_of(CONFIG),
         "cost_model_config": provenance.digest_of(cost_model.path),
         "scored_at": graph.read_at,
@@ -157,7 +162,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         print("  note: recovery rests on replication metadata that most assets lack;")
         print("        the ranking is falling back toward fan-out")
     if args.append_history:
-        _append_history(graph, scores, args.append_history, cost_model)
+        _append_history(graph, scores, args.append_history, cost_model, target.name)
     _print_table(scores, args.limit)
     _print_top(scores[0])
     print()

@@ -1,6 +1,6 @@
 # MCP readback
 
-Source artifact: `examples/reports/estate-graph.txt`.
+Source artifact: `examples/reports/commerce/estate-graph.txt`.
 
 ```text
 # The estate graph as Stage 1 read it over MCP

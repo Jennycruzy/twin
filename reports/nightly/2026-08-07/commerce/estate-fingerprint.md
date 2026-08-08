@@ -4,7 +4,7 @@ The records below are copied from the append-only history artifacts.
 
 ## Latest estate read
 
-Source artifact: `examples/history/nightly.jsonl`.
+Source artifact: `examples/history/commerce/nightly.jsonl`.
 
 ```json
 {
@@ -23,7 +23,7 @@ Source artifact: `examples/history/nightly.jsonl`.
 
 ## Latest fragility score
 
-Source artifact: `examples/history/fragility.jsonl`.
+Source artifact: `examples/history/commerce/fragility.jsonl`.
 
 ```json
 {

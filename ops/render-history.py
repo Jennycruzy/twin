@@ -13,9 +13,12 @@ it is worse than one that says where the hole is.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
-HISTORY = Path("examples/history")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from twin import evidence
 
 
 def _load(path: Path) -> tuple[list[dict], list[str]]:
@@ -120,16 +123,12 @@ def _attempts(records: list[dict]) -> list[str]:
 
 
 def main() -> int:
-    reads, read_problems = _load(HISTORY / "nightly.jsonl")
-    scores, score_problems = _load(HISTORY / "fragility.jsonl")
-    attempts, attempt_problems = _load(HISTORY / "attempts.jsonl")
-
     lines = [
         "# Nightly history",
         "",
-        "Rendered from `nightly.jsonl`, `fragility.jsonl` and `attempts.jsonl` in this",
-        "directory by `ops/render-history.py`. Those files are the record; this is a view of",
-        "them. Regenerate with `make examples`.",
+        "Rendered from each estate's `nightly.jsonl` and `fragility.jsonl`, plus the shared",
+        "`attempts.jsonl`, by `ops/render-history.py`. Those files are the record; this is a",
+        "view of them. Regenerate with `make examples`.",
         "",
         "Every read and score below was written by a run that actually happened — the nightly",
         "appends only after a read succeeds, so a failed night contributes no numbers rather",
@@ -139,20 +138,36 @@ def main() -> int:
         "newest attempt. A changed fingerprint means the estate's structure changed; an",
         "unchanged one across nights is the evidence that scoring is deterministic.",
         "",
-        "## Estate reads",
-        "",
-        *_reads(reads),
-        "",
-        "## Fragility scoring",
-        "",
-        *_scores(scores),
-        "",
+    ]
+
+    problems: list[str] = []
+    for target in evidence.known_targets():
+        reads, read_problems = _load(evidence.nightly_history(target))
+        scores, score_problems = _load(evidence.fragility_history(target))
+        problems.extend(read_problems + score_problems)
+        lines.extend(
+            [
+                f"## {target}",
+                "",
+                "### Estate reads",
+                "",
+                *_reads(reads),
+                "",
+                "### Fragility scoring",
+                "",
+                *_scores(scores),
+                "",
+            ]
+        )
+
+    attempts, attempt_problems = _load(evidence.attempts_history())
+    lines.extend([
         "## Every attempt, including failures",
         "",
         *_attempts(attempts),
-    ]
+    ])
 
-    problems = read_problems + score_problems + attempt_problems
+    problems.extend(attempt_problems)
     if problems:
         lines += ["", "## Lines that could not be read", ""]
         lines += [f"- {p}" for p in problems]

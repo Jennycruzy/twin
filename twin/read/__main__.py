@@ -76,7 +76,10 @@ def _print_report(graph: EstateGraph, elapsed: float, previous: str | None, cach
 
 
 def _append_history(
-    graph: EstateGraph, path: Path, extras: dict[str, object] | None = None
+    graph: EstateGraph,
+    path: Path,
+    extras: dict[str, object] | None = None,
+    target: str | None = None,
 ) -> None:
     """Append one line describing this read to the nightly history.
 
@@ -88,10 +91,16 @@ def _append_history(
     Each line also carries the commit that produced it, so a record that disagrees with a
     later one can be attributed to the code changing rather than leaving a reader to guess.
     See :mod:`twin.provenance`.
+
+    It also names its target. History is partitioned by estate on disk, but a line that only
+    knows which file it sits in stops being self-describing the moment it is moved or two
+    files are concatenated — and two estates' numbers are not comparable, so a record that
+    cannot say which estate it measured is worse than useless. See :mod:`twin.evidence`.
     """
     datasets = graph.of_kind(KIND_DATASET)
     record = {
         **provenance.stamp(),
+        "target": target,
         "read_at": graph.read_at,
         "fingerprint": graph.fingerprint,
         "source": graph.source,
@@ -156,7 +165,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             return 2
         print(f"\n  {graph.summary_line()}\n  read at {graph.read_at} from {graph.source}\n")
         if args.append_history:
-            _append_history(graph, args.append_history, history_extras)
+            _append_history(graph, args.append_history, history_extras, target.name)
         return 0
 
     previous = previous_fingerprint(cache_dir)
@@ -180,7 +189,7 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     entry = store(graph, cache_dir)
     if args.append_history:
-        _append_history(graph, args.append_history, history_extras)
+        _append_history(graph, args.append_history, history_extras, target.name)
     _print_report(graph, elapsed, previous, entry.path)
     print(f"  {graph.summary_line()}\n")
     return 0

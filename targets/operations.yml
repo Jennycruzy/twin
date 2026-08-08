@@ -18,6 +18,7 @@ runtime:
   dbt_project: operations_estate/dbt
   workload: operations_estate/ingest/queries/workload.yml
   scenario_dir: operations_scenarios
+  nightly_scenario: operations_scenarios/inventory_units_nulled_at_source.yml
   cache_dir: .twin/operations
   seed_module: operations_estate.seed.generate
   metadata_module: operations_estate.ingest.emit

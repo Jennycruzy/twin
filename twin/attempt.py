@@ -29,7 +29,7 @@ import json
 from pathlib import Path
 from typing import Any, Iterable
 
-from twin import provenance
+from twin import evidence, provenance
 
 STATUSES = ("succeeded", "failed")
 
@@ -43,6 +43,7 @@ def record(
     *,
     status: str,
     stage: str,
+    target: str | None = None,
     detail: str | None = None,
     attempted_at: str | None = None,
     verification_artifact: str | None = None,
@@ -63,6 +64,7 @@ def record(
         "attempted_at": attempted_at or _now(),
         "status": status,
         "stage": stage.strip(),
+        "target": target,
         "detail": detail,
         "verification_artifact": verification_artifact,
         **provenance.stamp(),
@@ -78,9 +80,10 @@ def record(
 
 def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Append a nightly attempt record.")
-    parser.add_argument("--history", type=Path, default=Path("examples/history/attempts.jsonl"))
+    parser.add_argument("--history", type=Path, default=evidence.attempts_history())
     parser.add_argument("--status", required=True, choices=STATUSES)
     parser.add_argument("--stage", required=True, help="how far the run got")
+    parser.add_argument("--target", help="estate this attempt was for, if it had chosen one")
     parser.add_argument("--detail", help="what happened, in one line")
     parser.add_argument("--attempted-at", help="ISO timestamp; defaults to now")
     parser.add_argument("--verification-artifact", help="path to output this attempt produced")
@@ -91,6 +94,7 @@ def main(argv: Iterable[str] | None = None) -> int:
             args.history,
             status=args.status,
             stage=args.stage,
+            target=args.target or None,
             detail=args.detail,
             attempted_at=args.attempted_at,
             verification_artifact=args.verification_artifact,
