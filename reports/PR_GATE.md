@@ -5,7 +5,7 @@
 - Manifest: `examples/pr-manifests/risky-fx-rates.yml`
 - Target: `commerce`
 - Threshold: `50` (high fragility is score ≥ threshold)
-- Provenance: commit `b80ad24`
+- Provenance: commit `98ea139`
 - Run provenance: generated locally by `make pr-gate`
 
 | Changed asset | Rank | Fragility | Blast radius | Cost | Gate |
