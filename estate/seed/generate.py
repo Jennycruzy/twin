@@ -501,7 +501,10 @@ def gen_fx_rates(rng: Rng) -> Iterator[tuple]:
         rate_date = (ESTATE_START + dt.timedelta(days=day_offset)).date()
         for quote in sorted(base_levels):
             levels[quote] *= 1.0 + rng.normal(0.0, 0.004)
-            yield (rate_date, "USD", quote, round(levels[quote], 8), "ecb_daily")
+            # Demonstration PR change: the upstream feed starts serialising the rate as text.
+            # This is a real raw_pg.fx_rates type regression; downstream currency arithmetic
+            # is expected to fail until the contract is repaired.
+            yield (rate_date, "USD", quote, str(round(levels[quote], 8)), "ecb_daily")
 
 
 # --------------------------------------------------------------------------- raw_events
