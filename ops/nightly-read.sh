@@ -66,7 +66,9 @@ mv "$VERIFICATION_TMP" "$VERIFICATION_ARTIFACT"
 
 TEST_LOG="$TMP_DIR/pytest.txt"
 say "running the test suite"
-docker compose run --rm -T twin python -m pytest -q 2>&1 | tee "$TEST_LOG"
+# pyproject.toml already supplies one -q. Passing another here raises pytest's quiet
+# level to -qq, which suppresses the final "N passed" line this evidence parser reads.
+docker compose run --rm -T twin python -m pytest 2>&1 | tee "$TEST_LOG"
 TESTS_PASSED="$(sed -nE 's/.*([0-9]+) passed.*/\1/p' "$TEST_LOG" | tail -1)"
 if [ -z "$TESTS_PASSED" ]; then
   say "could not find the pytest passed count"
