@@ -12,6 +12,11 @@
 # genuinely succeeded, and the estate is verified first, so a broken estate produces no
 # history rather than a line asserting something that was not checked.
 #
+# Because that history is success-only, a failed night would otherwise be invisible — an
+# absent date reads the same whether nobody ran the job or the job ran and failed. So every
+# attempt, successful or not, also appends to examples/history/attempts.jsonl, and a failure
+# commits and pushes that record on its way out. See twin/attempt.py.
+#
 # Direct invocation is the VPS cron mode: it commits and pushes after a successful run.
 # `make nightly` sets NIGHTLY_AUTOCOMMIT=0 so a Mac or another operator can inspect the
 # generated evidence and commit it with their normal Git credentials.
@@ -37,12 +42,53 @@ fi
 
 HISTORY="examples/history/nightly.jsonl"
 SCORES="examples/history/fragility.jsonl"
+ATTEMPTS="examples/history/attempts.jsonl"
 RUN_DATE="$(date -u +%Y-%m-%d)"
+STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
 VERIFICATION_ARTIFACT="examples/verification/nightly-${RUN_DATE}.txt"
 TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TMP_DIR"' EXIT
 
 say() { printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1"; }
+
+# How far the run got. Every stage sets this before it starts, so a failure anywhere is
+# recorded against the step that actually failed rather than against the script as a whole.
+STAGE="startup"
+ATTEMPT_RECORDED=0
+
+record_attempt() {
+  local status="$1" detail="$2"
+  ATTEMPT_RECORDED=1
+  local artifact=()
+  [ -f "$VERIFICATION_ARTIFACT" ] && artifact=(--verification-artifact "$VERIFICATION_ARTIFACT")
+  docker compose run --rm -T twin python -m twin.attempt \
+    --history "$ATTEMPTS" --status "$status" --stage "$STAGE" \
+    --attempted-at "$STARTED_AT" --detail "$detail" "${artifact[@]}" || {
+      say "could not record the attempt; the run outcome is only in this log"
+      return 0
+    }
+}
+
+# A failed night must leave a record saying so. The success-only history cannot: it appends
+# nothing, and a reader cannot tell a failed run from a night nobody ran. So the failure is
+# recorded, committed, and pushed on the way out — disclosing the miss is the last thing the
+# run does, not something an operator has to remember to do the next morning.
+on_exit() {
+  local code=$?
+  if [ "$code" -ne 0 ] && [ "$ATTEMPT_RECORDED" -eq 0 ]; then
+    say "nightly failed at stage ${STAGE} (exit ${code}); recording the miss"
+    record_attempt failed "stage ${STAGE} exited ${code}"
+    if [ "$NIGHTLY_AUTOCOMMIT" = "1" ] && ! git diff --quiet -- "$ATTEMPTS"; then
+      git config user.name jennycruzy
+      git config user.email jennycruzy@users.noreply.github.com
+      git add "$ATTEMPTS"
+      [ -f "$VERIFICATION_ARTIFACT" ] && git add "$VERIFICATION_ARTIFACT"
+      git commit -q -m "Record the failed nightly attempt for ${RUN_DATE}" && git push -q origin main \
+        && say "miss recorded and pushed"
+    fi
+  fi
+  rm -rf "$TMP_DIR"
+}
+trap on_exit EXIT
 
 say "starting nightly read"
 
@@ -51,9 +97,11 @@ say "starting nightly read"
 # nobody watching.
 docker compose up -d --wait warehouse datahub-gms datahub-frontend
 
+STAGE="estate verification"
 say "verifying the estate"
 docker compose run --rm -T twin python -m estate.verify_estate
 
+STAGE="source-column verification"
 say "running the source-column verification"
 VERIFICATION_TMP="$TMP_DIR/verification.txt"
 {
@@ -65,6 +113,7 @@ VERIFICATION_TMP="$TMP_DIR/verification.txt"
 mv "$VERIFICATION_TMP" "$VERIFICATION_ARTIFACT"
 
 TEST_LOG="$TMP_DIR/pytest.txt"
+STAGE="test suite"
 say "running the test suite"
 docker compose run --rm -T twin python -m pytest -q 2>&1 | tee "$TEST_LOG"
 TESTS_PASSED="$(sed -nE 's/.*([0-9]+) passed.*/\1/p' "$TEST_LOG" | tail -1)"
@@ -82,15 +131,19 @@ if [ -z "${VERIFICATION_PRECISION:-}" ] || [ -z "${VERIFICATION_RECALL:-}" ]; th
   exit 1
 fi
 
+STAGE="MCP read"
 say "reading the estate over MCP"
 docker compose run --rm -T twin python -m twin.read
 
+STAGE="fragility scoring"
 say "scoring fragility"
 docker compose run --rm -T twin python -m twin.score --append-history "$SCORES"
 
+STAGE="DataHub write-back"
 say "writing fragility scores back to DataHub"
 docker compose run --rm -T twin python -m twin.write
 
+STAGE="history append"
 say "recording the successful nightly run"
 docker compose run --rm -T twin python -m twin.read --target commerce --cached \
   --append-history "$HISTORY" \
@@ -100,6 +153,7 @@ docker compose run --rm -T twin python -m twin.read --target commerce --cached \
   --pipeline-status succeeded \
   --verification-artifact "$VERIFICATION_ARTIFACT"
 
+STAGE="report render"
 say "rendering the judge-facing report"
 make --no-print-directory report
 
@@ -108,6 +162,9 @@ if git diff --quiet -- "$HISTORY" "$SCORES"; then
   exit 1
 fi
 
+STAGE="complete"
+record_attempt succeeded "read, scored, wrote back, and appended history"
+
 if [ "$NIGHTLY_AUTOCOMMIT" = "0" ]; then
   say "evidence generated; commit reports/, examples/history/ and examples/verification/ when reviewed"
   exit 0
@@ -115,7 +172,7 @@ fi
 
 git config user.name jennycruzy
 git config user.email jennycruzy@users.noreply.github.com
-git add "$HISTORY" "$SCORES" "$VERIFICATION_ARTIFACT" reports
+git add "$HISTORY" "$SCORES" "$ATTEMPTS" "$VERIFICATION_ARTIFACT" reports
 git commit -q -m "Record the nightly estate read for $(date -u +%Y-%m-%d)"
 git push -q origin main
 

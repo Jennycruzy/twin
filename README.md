@@ -185,8 +185,14 @@ installed in host cron because the stack is already up on that box. It verifies 
 reads it over MCP, scores it, writes current properties, runs a real verification, records the
 test and precision/recall results, and appends measured history. GitHub Actions is disabled on
 this account; `.github/workflows/twin-nightly.yml` remains the reproducible CI-shaped variant
-that builds the stack from nothing, but is not the source of the host's nightly evidence. A
-failed run does not produce a history line.
+that builds the stack from nothing, but is not the source of the host's nightly evidence.
+
+A failed run produces no history line and no score — a run that did not finish has nothing to
+contribute. It does append to `examples/history/attempts.jsonl`, and commits and pushes that
+record before exiting. This is the difference between a trail that is silent about its gaps
+and one that names them: a missing date alone cannot distinguish a night nobody ran from a
+night that ran and failed, and `reports/LATEST.md` states any failure newer than the run it is
+showing. The nightly of 2026-08-08 failed at the test suite and is recorded there.
 
 The same proof can run without GitHub Actions or GitHub Actions billing:
 

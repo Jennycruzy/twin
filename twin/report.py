@@ -85,6 +85,52 @@ def _json_block(title: str, record: dict[str, Any] | None, source: Path, root: P
     )
 
 
+def _missed_since(attempts: list[dict[str, Any]], verified_at: dt.datetime) -> list[dict[str, Any]]:
+    """Attempts that failed after the latest verified run, newest first.
+
+    Anything at or before the verified run is already accounted for by the run itself. What
+    matters to a reader is the interval since: a failure in it means the numbers on this page
+    are the newest *verified* ones, not the newest ones anybody tried to produce.
+    """
+    failed = [
+        attempt
+        for attempt in attempts
+        if attempt.get("status") != "succeeded"
+        and _timestamp(attempt, "attempted_at") > verified_at
+    ]
+    return sorted(failed, key=lambda attempt: _timestamp(attempt, "attempted_at"), reverse=True)
+
+
+def _missed_section(missed: list[dict[str, Any]], source: Path, root: Path) -> list[str]:
+    if not missed:
+        return []
+    lines = [
+        "## Runs that did not complete",
+        "",
+        "These runs were attempted and failed. They appended no estate read and no score, so "
+        "nothing above reflects them — they are listed because a success-only history cannot "
+        "distinguish a failed night from a night nobody ran.",
+        "",
+        f"Source artifact: `{_display(source, root)}`.",
+        "",
+        "| attempted (UTC) | stage reached | commit | detail |",
+        "|---|---|---|---|",
+    ]
+    for attempt in missed:
+        commit = attempt.get("commit") or "—"
+        if attempt.get("dirty"):
+            commit += " (dirty)"
+        detail = str(attempt.get("detail") or "—")
+        if attempt.get("reconstructed_from"):
+            detail += f" — reconstructed from `{attempt['reconstructed_from']}`"
+        lines.append(
+            f"| {attempt.get('attempted_at') or '—'} | {attempt.get('stage') or '—'} "
+            f"| `{commit}` | {detail} |"
+        )
+    lines.append("")
+    return lines
+
+
 def render(root: Path = Path(".")) -> Path:
     """Write the dated report and the stable ``reports/LATEST.md`` link target."""
     root = root.resolve()
@@ -124,6 +170,9 @@ def render(root: Path = Path(".")) -> Path:
         + _json_block("Latest fragility score", score_record, score_source, root)
     )
 
+    attempt_source = history_dir / "attempts.jsonl"
+    missed = _missed_since(_records(attempt_source), _timestamp(dated_record, "read_at", "scored_at"))
+
     latest_lines = [
         "# Twin — latest verified run",
         "",
@@ -132,6 +181,15 @@ def render(root: Path = Path(".")) -> Path:
         f"Run artifacts: [`reports/nightly/{report_date}/`](nightly/{report_date}/)",
         "",
     ]
+    if missed:
+        latest_lines.extend(
+            [
+                f"**{len(missed)} later nightly run(s) did not complete.** The numbers below are "
+                "therefore older than the most recent attempt; see "
+                "[runs that did not complete](#runs-that-did-not-complete).",
+                "",
+            ]
+        )
     if read_record and read_record.get("pipeline_status") is not None:
         latest_lines.extend([f"Pipeline status: `{read_record['pipeline_status']}`", ""])
     for label, key in (
@@ -156,6 +214,7 @@ def render(root: Path = Path(".")) -> Path:
             "",
         ]
     )
+    latest_lines.extend(_missed_section(missed, attempt_source, root))
     latest = root / "reports" / "LATEST.md"
     latest.parent.mkdir(parents=True, exist_ok=True)
     latest.write_text("\n".join(latest_lines))

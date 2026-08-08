@@ -99,21 +99,45 @@ def _scores(records: list[dict]) -> list[str]:
     )
 
 
+def _attempts(records: list[dict]) -> list[str]:
+    if not records:
+        return ["No attempts recorded yet."]
+    rows = []
+    for r in records:
+        detail = _cell(r.get("detail"))
+        if r.get("reconstructed_from"):
+            detail += f" (reconstructed from `{r['reconstructed_from']}`)"
+        rows.append(
+            [
+                _cell(r.get("attempted_at")),
+                _cell(r.get("status")),
+                _cell(r.get("stage")),
+                _cell(r.get("commit")),
+                detail,
+            ]
+        )
+    return _table(["attempted (UTC)", "status", "stage reached", "commit", "detail"], rows)
+
+
 def main() -> int:
     reads, read_problems = _load(HISTORY / "nightly.jsonl")
     scores, score_problems = _load(HISTORY / "fragility.jsonl")
+    attempts, attempt_problems = _load(HISTORY / "attempts.jsonl")
 
     lines = [
         "# Nightly history",
         "",
-        "Rendered from `nightly.jsonl` and `fragility.jsonl` in this directory by",
-        "`ops/render-history.py`. Those files are the record; this is a view of them.",
-        "Regenerate with `make examples`.",
+        "Rendered from `nightly.jsonl`, `fragility.jsonl` and `attempts.jsonl` in this",
+        "directory by `ops/render-history.py`. Those files are the record; this is a view of",
+        "them. Regenerate with `make examples`.",
         "",
-        "Each line was written by a run that actually happened — the nightly appends only",
-        "after a read succeeds, so a failed night leaves no row rather than an asserted one.",
-        "A changed fingerprint means the estate's structure changed; an unchanged one across",
-        "nights is the evidence that scoring is deterministic.",
+        "Every read and score below was written by a run that actually happened — the nightly",
+        "appends only after a read succeeds, so a failed night contributes no numbers rather",
+        "than asserted ones. It does contribute a row to the attempts table: a success-only",
+        "history cannot tell a failed night from a night nobody ran, and the difference",
+        "matters, because a failure means the newest verified numbers are older than the",
+        "newest attempt. A changed fingerprint means the estate's structure changed; an",
+        "unchanged one across nights is the evidence that scoring is deterministic.",
         "",
         "## Estate reads",
         "",
@@ -122,9 +146,13 @@ def main() -> int:
         "## Fragility scoring",
         "",
         *_scores(scores),
+        "",
+        "## Every attempt, including failures",
+        "",
+        *_attempts(attempts),
     ]
 
-    problems = read_problems + score_problems
+    problems = read_problems + score_problems + attempt_problems
     if problems:
         lines += ["", "## Lines that could not be read", ""]
         lines += [f"- {p}" for p in problems]
