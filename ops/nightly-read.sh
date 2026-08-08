@@ -122,7 +122,10 @@ on_exit() {
       git commit -q -m "Record the failed nightly attempt for ${RUN_DATE}" && git push -q origin main \
         && say "miss recorded and pushed"
     fi
-    alert "Twin nightly FAILED on ${RUN_DATE} at stage '${STAGE}'${CURRENT_TARGET:+ for estate ${CURRENT_TARGET}} (exit ${code}). No history line was written; reports/LATEST.md will name the gap."
+    # The run, not the day. Two failures on one date would otherwise send byte-identical
+    # messages, leaving no way to tell a second failure from a duplicate of the first —
+    # and a duplicate alert nobody can identify as one gets read as a second outage.
+    alert "Twin nightly FAILED — run ${STARTED_AT} (commit $(git rev-parse --short HEAD)) at stage '${STAGE}'${CURRENT_TARGET:+ for estate ${CURRENT_TARGET}} (exit ${code}). No history line was written; reports/LATEST.md will name the gap."
   fi
   rm -rf "$TMP_DIR"
 }
