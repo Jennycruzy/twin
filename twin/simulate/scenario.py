@@ -47,6 +47,7 @@ class Fault:
     column: str | None
     at: dt.time
     withhold_days: int = _DEFAULT_WITHHOLD_DAYS
+    departed_owner: str | None = None
 
     @property
     def definition(self) -> FaultKind:
@@ -54,9 +55,10 @@ class Fault:
 
     def describe(self) -> str:
         target = f"{self.asset}.{self.column}" if self.column else self.asset
+        owner_note = f"; {self.departed_owner} has departed" if self.departed_owner else ""
         if self.kind == "stop_new_rows":
-            return f"{self.asset} stops receiving rows for {self.withhold_days} days"
-        return f"{target}: {self.definition.summary}"
+            return f"{self.asset} stops receiving rows for {self.withhold_days} days{owner_note}"
+        return f"{target}: {self.definition.summary}{owner_note}"
 
 
 @dataclass(frozen=True)
@@ -127,6 +129,11 @@ def load_scenario(path: Path) -> Scenario:
             column=str(column) if column else None,
             at=_parse_time(fault_payload.get("at", _DEFAULT_FAULT_TIME)),
             withhold_days=int(fault_payload.get("withhold_days", _DEFAULT_WITHHOLD_DAYS)),
+            departed_owner=(
+                str(fault_payload["departed_owner"])
+                if fault_payload.get("departed_owner")
+                else None
+            ),
         ),
         path=path,
     )

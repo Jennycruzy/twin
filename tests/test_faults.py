@@ -260,6 +260,14 @@ def test_assets_with_no_owner_are_listed_rather_than_dropped():
     assert paging.unowned == ("marts.unowned_mart",)
 
 
+def test_departed_owner_becomes_unowned_in_the_paging_result():
+    timeline = predict(estate(), scenario("drop_asset"))
+    paging = build_paging(estate(), timeline, departed_owner="ana@example.com")
+    assert all(page.owner != "ana@example.com" for page in paging.pages)
+    assert "intermediate.reads_merchant" in paging.unowned
+    assert "marts.downstream" in paging.unowned
+
+
 def test_paging_is_stable_across_runs():
     timeline = predict(estate(), scenario("drop_asset"))
     assert build_paging(estate(), timeline) == build_paging(estate(), timeline)

@@ -126,7 +126,12 @@ def _print_execution(layout: ShadowEstate, build: BuildOutcome, statements: int)
     print("  SHADOW EXECUTION")
     print(_RULE)
     print(f"    schema        {layout.schema}")
-    print(f"    fault         {layout.faulted}.{layout.dropped_column} removed from the shadow copy")
+    fault = (
+        f"{layout.faulted}.{layout.dropped_column} removed from the shadow copy"
+        if layout.dropped_column
+        else f"{layout.faulted} deleted from the shadow copy"
+    )
+    print(f"    fault         {fault}")
     print(f"    passthrough   {len(layout.passthrough)} views onto the real estate")
     print(f"    rebuilt       {len(layout.to_rebuild)} models, dbt exit {build.returncode}")
     print(f"    statements    {statements} issued, every one inside {layout.schema}")
@@ -188,8 +193,10 @@ def _print_ungraded(card: Scorecard, graph: EstateGraph) -> None:
         print(f"    {kind:<20} {count}")
 
 
-def _print_paging(graph: EstateGraph, timeline: Timeline) -> None:
-    paging = build_paging(graph, timeline)
+def _print_paging(
+    graph: EstateGraph, timeline: Timeline, departed_owner: str | None = None
+) -> None:
+    paging = build_paging(graph, timeline, departed_owner=departed_owner)
     print()
     print("  WHO GETS PAGED")
     print(_RULE)
@@ -337,7 +344,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         )
 
     _print_ungraded(grade(timeline.broken, affected(observed), layout.to_rebuild), graph)
-    _print_paging(graph, timeline)
+    _print_paging(graph, timeline, scenario.fault.departed_owner)
     _print_consumers(consumers)
 
     if args.evidence:

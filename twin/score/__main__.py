@@ -19,6 +19,7 @@ from twin.read import read_estate
 from twin.read.cache import load_latest, store
 from twin.read.model import EstateGraph
 from twin.score.fragility import COMPONENTS, CONFIG, Coverage, Score, Weights, score_estate
+from twin.score.cost import CostModel
 from twin.score.knockout import sweep
 from twin.score.usage import read_usage
 from twin.target import TwinTarget, load_target
@@ -41,14 +42,14 @@ def _print_table(scores: tuple[Score, ...], limit: int) -> None:
     print("  FRAGILITY")
     print(_RULE)
     header = "  ".join(f"{name[:5]:>5}" for name in COMPONENTS)
-    print(f"  {'#':>2}  {'ASSET':<40} {'SCORE':>6}   {header}   BLAST")
+    print(f"  {'#':>2}  {'ASSET':<40} {'SCORE':>6}   {header}   BLAST     COST")
     print(_RULE)
     for rank, score in enumerate(scores[:limit], start=1):
         parts = "  ".join(f"{score.components[name]:>5.2f}" for name in COMPONENTS)
         shot = score.knockout
         print(
             f"  {rank:>2}  {score.key:<40} {score.score:>6.1f}   {parts}   "
-            f"{len(shot.datasets_lost)}+{len(shot.consumers_lost)}"
+            f"{len(shot.datasets_lost)}+{len(shot.consumers_lost)}  ${score.blast_radius_cost:>8,.2f}"
         )
     print(_RULE)
 
@@ -68,12 +69,15 @@ def _print_top(score: Score) -> None:
           f"{len(shot.consumers_lost)} consumer(s) with it")
     print(f"    {len(set(shot.owners_paged))} owner(s) would be paged, "
           f"{len(shot.unowned_in_radius)} asset(s) in the radius have no owner")
+    print(f"    blast radius cost ${score.blast_radius_cost:,.2f}")
     if shot.first_consumer_at is not None:
         hours = shot.first_consumer_at.total_seconds() / 3600
         print(f"    first consumer affected {hours:.1f}h after the fault")
 
 
-def _append_history(graph: EstateGraph, scores: tuple[Score, ...], path: Path) -> None:
+def _append_history(
+    graph: EstateGraph, scores: tuple[Score, ...], path: Path, cost_model: CostModel
+) -> None:
     """Append one line of measured fragility to the nightly record.
 
     The trend is the claim that cannot be backfilled: a fragility score climbing over three
@@ -89,11 +93,19 @@ def _append_history(graph: EstateGraph, scores: tuple[Score, ...], path: Path) -
     record = {
         **provenance.stamp(),
         "scoring_config": provenance.digest_of(CONFIG),
+        "cost_model_config": provenance.digest_of(cost_model.path),
         "scored_at": graph.read_at,
         "fingerprint": graph.fingerprint,
         "assets_scored": len(scores),
         "mean_score": round(sum(s.score for s in scores) / len(scores), 3) if scores else 0.0,
-        "top": [{"key": s.key, "score": round(s.score, 3)} for s in scores[:5]],
+        "top": [
+            {
+                "key": s.key,
+                "score": round(s.score, 3),
+                "blast_radius_cost": round(s.blast_radius_cost, 2),
+            }
+            for s in scores[:5]
+        ],
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a") as history:
@@ -118,13 +130,14 @@ def main(argv: Iterable[str] | None = None) -> int:
     graph = _load_graph(target, args.refresh)
     try:
         weights = Weights.load(args.config)
+        cost_model = CostModel.load()
     except (OSError, ValueError) as exc:
         print(f"cannot load scoring weights: {exc}", file=sys.stderr)
         return 2
 
     usage = read_usage(scope=target.catalog)
     knockouts = sweep(graph)
-    scores = score_estate(graph, knockouts, usage, weights)
+    scores = score_estate(graph, knockouts, usage, weights, cost_model)
 
     print()
     coverage = Coverage.measure(graph, usage)
@@ -144,13 +157,14 @@ def main(argv: Iterable[str] | None = None) -> int:
         print("  note: recovery rests on replication metadata that most assets lack;")
         print("        the ranking is falling back toward fan-out")
     if args.append_history:
-        _append_history(graph, scores, args.append_history)
+        _append_history(graph, scores, args.append_history, cost_model)
     _print_table(scores, args.limit)
     _print_top(scores[0])
     print()
     print("  Scores are positions within this estate, not absolute values; two estates'")
     print("  numbers are not comparable. Weights are in config/scoring.yml and every")
     print("  component above is measured — see docs/SCORING.md.")
+    print(f"  Blast-radius cost is illustrative, {cost_model.assumptions_line()}.")
     print()
     return 0
 

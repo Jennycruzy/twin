@@ -1,0 +1,10 @@
+# Configurable assumptions for the blast-radius cost dimension.
+#
+# These are not measured facts about a company. They are an explicit translation from the
+# measured radius into an illustrative dollar estimate. Every command that displays the
+# estimate names this file and repeats the assumptions inline.
+
+engineer_hours_per_broken_model: 4.0
+consumer_hours_per_affected_dashboard: 2.0
+engineer_hourly_rate_usd: 150.0
+consumer_hourly_rate_usd: 75.0

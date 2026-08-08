@@ -27,6 +27,7 @@ def make_score(
     datasets_lost: tuple[str, ...] = ("a", "b"),
     consumers_lost: tuple[str, ...] = ("dash",),
     owners_paged: tuple[str, ...] = ("priya", "sam"),
+    blast_radius_cost: float = 123.45,
 ) -> Score:
     shot = Knockout(
         key=key,
@@ -43,6 +44,7 @@ def make_score(
         components={name: 0.5 for name in COMPONENTS},
         raw={name: 1.0 for name in COMPONENTS},
         knockout=shot,
+        blast_radius_cost=blast_radius_cost,
     )
 
 
@@ -73,6 +75,11 @@ def test_blast_radius_counts_datasets_and_consumers():
         provenance="p",
     )
     assert values[f"{PREFIX}blast_radius"] == 5
+
+
+def test_blast_radius_cost_is_published_with_the_measured_score():
+    values = values_for(make_score(), rank=1, scored_at="t", provenance="p")
+    assert values[f"{PREFIX}blast_radius_cost"] == 123.45
 
 
 def test_bus_factor_counts_distinct_owners_not_pages():
