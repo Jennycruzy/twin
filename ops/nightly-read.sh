@@ -47,6 +47,16 @@ trap 'rm -rf "$TMP_DIR"' EXIT
 
 say() { printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1"; }
 
+clean_capture() {
+  # Compose progress lines can contain trailing spaces. Strip those and trailing blank
+  # lines so generated evidence also passes the repository whitespace gate.
+  awk '
+    { sub(/[[:space:]]+$/, ""); lines[NR] = $0; if ($0 != "") last = NR }
+    END { for (line = 1; line <= last; line++) print lines[line] }
+  ' "$1" > "$1.clean"
+  mv "$1.clean" "$1"
+}
+
 say "starting nightly read"
 
 # The stack is expected to be up already. Bring up anything that is not, rather than
@@ -65,6 +75,7 @@ VERIFICATION_TMP="$TMP_DIR/verification.txt"
   docker compose run --rm -T twin python -m twin.run --target commerce \
     scenarios/merchant_id_nulled_at_source.yml
 } 2>&1 | tee "$VERIFICATION_TMP"
+clean_capture "$VERIFICATION_TMP"
 mv "$VERIFICATION_TMP" "$VERIFICATION_ARTIFACT"
 
 TEST_LOG="$TMP_DIR/pytest.txt"
@@ -94,6 +105,7 @@ MCP_TMP="$TMP_DIR/estate-graph.txt"
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(git rev-parse --short HEAD)"
   docker compose run --rm -T twin python -m twin.read
 } 2>&1 | tee "$MCP_TMP"
+clean_capture "$MCP_TMP"
 mkdir -p "$RUN_REPORT_DIR"
 mv "$MCP_TMP" "$MCP_ARTIFACT"
 
@@ -104,6 +116,7 @@ SCORE_TMP="$TMP_DIR/fragility-scorecard.txt"
     "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(git rev-parse --short HEAD)"
   docker compose run --rm -T twin python -m twin.score --append-history "$SCORES"
 } 2>&1 | tee "$SCORE_TMP"
+clean_capture "$SCORE_TMP"
 mv "$SCORE_TMP" "$SCORE_ARTIFACT"
 
 say "writing fragility scores back to DataHub"

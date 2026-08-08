@@ -128,12 +128,13 @@ def render(root: Path = Path(".")) -> Path:
     (output_dir / "mcp-readback.md").write_text(
         _fenced("MCP readback", mcp_source, root, mcp_source.read_text())
     )
-    (output_dir / "estate-fingerprint.md").write_text(
+    fingerprint_text = (
         "# Estate fingerprint\n\n"
         "The records below are copied from the append-only history artifacts.\n\n"
         + _json_block("Latest estate read", read_record, read_source, root)
         + _json_block("Latest fragility score", score_record, score_source, root)
     )
+    (output_dir / "estate-fingerprint.md").write_text(fingerprint_text.rstrip() + "\n")
 
     latest_lines = [
         "# Twin — latest verified run",
