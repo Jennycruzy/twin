@@ -23,6 +23,12 @@ immutable estate graph ──▶ deterministic propagation ──▶ fragility r
 Twin does not claim that a catalog is correct because it contains a claim. It tests whether
 the claim survives contact with a warehouse, names its misses, and makes uncertainty visible.
 
+Using DataHub this hard surfaced five interface gaps, all filed upstream with reproduction
+steps: two new issues ([mcp-server-datahub#197](https://github.com/acryldata/mcp-server-datahub/issues/197),
+[datahub#18974](https://github.com/datahub-project/datahub/issues/18974)) and evidence on three
+existing ones. They are written up in [docs/UPSTREAM.md](docs/UPSTREAM.md), and every one of
+them came out of a run that failed rather than a reading of the documentation.
+
 ## The result
 
 Twin has been run against two independently designed estates using the same graph model,
