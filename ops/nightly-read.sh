@@ -56,6 +56,12 @@ TARGETS="${TWIN_NIGHTLY_TARGETS:-$(ls targets/*.yml | xargs -n1 basename | sed '
 ATTEMPTS="examples/history/attempts.jsonl"
 RUN_DATE="$(date -u +%Y-%m-%d)"
 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%S+00:00)"
+# Verification captures are named after the run, not the day. Two runs on one date would
+# otherwise write the same filename, and the second would silently replace evidence that a
+# committed history line already points at — leaving that line asserting a precision the file
+# it references no longer shows. Colons are not in the filename because Windows checkouts of
+# this public repo cannot create them.
+RUN_STAMP="$(date -u +%Y-%m-%dT%H-%M-%S)"
 TMP_DIR="$(mktemp -d)"
 
 say() { printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1"; }
@@ -146,7 +152,7 @@ run_target() {
   local target="$1"
   CURRENT_TARGET="$target"
   VERIFICATION_WRITTEN=0
-  VERIFICATION_ARTIFACT="examples/verification/nightly-${target}-${RUN_DATE}.txt"
+  VERIFICATION_ARTIFACT="examples/verification/nightly-${target}-${RUN_STAMP}.txt"
 
   local history="examples/history/${target}/nightly.jsonl"
   local scores="examples/history/${target}/fragility.jsonl"

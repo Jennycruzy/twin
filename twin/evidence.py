@@ -49,9 +49,29 @@ def captured_dir(target: str, root: Path = Path(".")) -> Path:
     return root / CAPTURED / target
 
 
-def verification_artifact(target: str, date: str, root: Path = Path(".")) -> Path:
-    """The nightly verification capture for one estate on one date."""
-    return root / VERIFICATION / f"nightly-{target}-{date}.txt"
+def verification_artifact(target: str, run_stamp: str, root: Path = Path(".")) -> Path:
+    """The nightly verification capture for one run of one estate.
+
+    Keyed on the run, not the date. A date-only name means a second run on the same day
+    silently rewrites the first one's output — including an artifact that a committed history
+    line already points at, which would leave that line asserting a precision the file it
+    references no longer shows. Naming the file after the run that produced it makes the
+    collision impossible rather than merely unlikely.
+    """
+    return root / VERIFICATION / f"nightly-{target}-{run_stamp}.txt"
+
+
+def verification_artifacts_on(target: str, date: str, root: Path = Path(".")) -> list[Path]:
+    """Every nightly capture for one estate on one date, oldest name first.
+
+    Matches both the run-stamped names and the date-only names written before this was keyed
+    on the run: an artifact that was valid evidence when it was captured stays valid evidence
+    after the naming rule changes.
+    """
+    directory = root / VERIFICATION
+    if not directory.is_dir():
+        return []
+    return sorted(directory.glob(f"nightly-{target}-{date}*.txt"))
 
 
 def known_targets(root: Path = Path(".")) -> list[str]:
