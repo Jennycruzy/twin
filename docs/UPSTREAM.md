@@ -175,8 +175,9 @@ downstream *fields*. The landing column is obtainable only by asking
 `get_lineage_paths_between` whether one specific pair is connected — one call per candidate
 pair, thousands per estate read.
 
-For a 66-dataset estate this is roughly four thousand round trips and turns a read into
-twelve minutes, almost all of it waiting on GMS. Twin pays that cost because damage cannot be
+For a 66-dataset estate this is roughly four thousand round trips and turns a read into about
+ten minutes, almost all of it waiting on GMS — 10m07s and 10m43s on the nightlies of
+2026-08-06 and 2026-08-07. Twin pays that cost because damage cannot be
 followed at column grain past the first hop without it, and column grain is the difference
 between predicting fifteen damaged assets and the ten that actually break.
 

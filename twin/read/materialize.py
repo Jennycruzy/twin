@@ -316,7 +316,9 @@ async def _column_edges(
     symmetrically, and on this estate it dropped ``stg_fx_rates.rate`` ->
     ``mart_subscription_health.avg_subscriber_lifetime_usd`` — an edge shadow execution
     proves is real, since that mart genuinely fails when the column is dropped. A read that
-    silently loses edges costs more than a read that takes twelve minutes.
+    silently loses edges costs more than a slow read. The cost is about ten minutes on the
+    66-dataset commerce estate — 10m07s and 10m43s on the nightlies of 2026-08-06 and
+    2026-08-07, from the stage timings in the operator log.
     """
     by_key = {asset.key: asset for asset in assets}
     probes = [
