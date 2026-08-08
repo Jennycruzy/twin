@@ -19,6 +19,12 @@ read, so the gap is stated on the page rather than inferred from a date that is 
 Records marked ``reconstructed_from`` were written after the fact from an operator log rather
 than by the run itself. That is weaker evidence than a line a run wrote about itself, and it
 says so in the record instead of being indistinguishable from one.
+
+This file records the *scheduled* nightly. Running ops/nightly-read.sh by hand while working
+on it appends real records for runs that were never nightlies, and nothing in the record
+distinguishes the two — they would be read as production misses that never happened. Two such
+records were removed on 2026-08-08 for that reason. When developing the nightly, point it at a
+scratch file with ``--history``, or delete the record before it is committed.
 """
 
 from __future__ import annotations

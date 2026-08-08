@@ -52,6 +52,4 @@ unchanged one across nights is the evidence that scoring is deterministic.
 | 2026-08-06T03:17:01+00:00 | succeeded | complete | 421ce50 | read, scored, wrote back, and appended history (reconstructed from `/var/log/twin-nightly.log`) |
 | 2026-08-07T03:17:01+00:00 | succeeded | complete | 92a1cb5 | read, scored, wrote back, and appended history (reconstructed from `/var/log/twin-nightly.log`) |
 | 2026-08-08T03:17:01+00:00 | failed | test suite | 5ef4c81 | 2 failed: TestFxRates rates_are_positive and rates_move_as_a_walk; gen_fx_rates yielded str rates under commit b80ad24, reverted in c540f8d (reconstructed from `/var/log/twin-nightly.log`) |
-| 2026-08-08T14:26:17+00:00 | failed | test suite | b257006 | stage test suite exited 1 |
-| 2026-08-08T14:27:43+00:00 | failed | history append | b257006 | stage history append exited 1 |
 | 2026-08-08T14:31:52+00:00 | succeeded | complete | b257006 | read, scored, wrote back, and appended history |
