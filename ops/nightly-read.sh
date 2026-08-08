@@ -54,12 +54,16 @@ say() { printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1"; }
 # recorded against the step that actually failed rather than against the script as a whole.
 STAGE="startup"
 ATTEMPT_RECORDED=0
+# Set only once *this* run has written the artifact. Testing for the file on disk instead
+# would let a re-run on a date that already has one attach a previous run's output to this
+# run's failure, which is precisely the kind of borrowed evidence these records exist to stop.
+VERIFICATION_WRITTEN=0
 
 record_attempt() {
   local status="$1" detail="$2"
   ATTEMPT_RECORDED=1
   local artifact=()
-  [ -f "$VERIFICATION_ARTIFACT" ] && artifact=(--verification-artifact "$VERIFICATION_ARTIFACT")
+  [ "$VERIFICATION_WRITTEN" = "1" ] && artifact=(--verification-artifact "$VERIFICATION_ARTIFACT")
   docker compose run --rm -T twin python -m twin.attempt \
     --history "$ATTEMPTS" --status "$status" --stage "$STAGE" \
     --attempted-at "$STARTED_AT" --detail "$detail" "${artifact[@]}" || {
@@ -81,7 +85,7 @@ on_exit() {
       git config user.name jennycruzy
       git config user.email jennycruzy@users.noreply.github.com
       git add "$ATTEMPTS"
-      [ -f "$VERIFICATION_ARTIFACT" ] && git add "$VERIFICATION_ARTIFACT"
+      [ "$VERIFICATION_WRITTEN" = "1" ] && git add "$VERIFICATION_ARTIFACT"
       git commit -q -m "Record the failed nightly attempt for ${RUN_DATE}" && git push -q origin main \
         && say "miss recorded and pushed"
     fi
@@ -111,6 +115,7 @@ VERIFICATION_TMP="$TMP_DIR/verification.txt"
     scenarios/merchant_id_nulled_at_source.yml
 } 2>&1 | tee "$VERIFICATION_TMP"
 mv "$VERIFICATION_TMP" "$VERIFICATION_ARTIFACT"
+VERIFICATION_WRITTEN=1
 
 TEST_LOG="$TMP_DIR/pytest.txt"
 STAGE="test suite"
