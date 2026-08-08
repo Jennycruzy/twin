@@ -162,6 +162,12 @@ report: ## Generate reports/LATEST.md and the dated judge-facing evidence bundle
 	@$(SAY) "Rendering the latest verified run from generated artifacts."
 	@$(RUN) python -m twin.report
 
+.PHONY: nightly
+NIGHTLY_AUTOCOMMIT ?= 0
+nightly: ## Run the local nightly proof; defaults to leaving artifacts for a manual commit
+	@$(SAY) "Running the local nightly proof without GitHub Actions."
+	@NIGHTLY_AUTOCOMMIT=$(NIGHTLY_AUTOCOMMIT) ./ops/nightly-read.sh
+
 .PHONY: repair
 REPAIR_OUTPUT_DIR ?= examples/repair-prs
 REPAIR_SCENARIO ?=

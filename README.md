@@ -188,6 +188,19 @@ this account; `.github/workflows/twin-nightly.yml` remains the reproducible CI-s
 that builds the stack from nothing, but is not the source of the host's nightly evidence. A
 failed run does not produce a history line.
 
+The same proof can run without GitHub Actions or GitHub Actions billing:
+
+```bash
+make nightly
+git add reports/ examples/history/ examples/verification/
+git commit -m "nightly: verified Twin run $(date -u +%Y-%m-%d)"
+git push origin main
+```
+
+`make nightly` leaves the generated evidence uncommitted by default so a Mac launchd job or
+cron entry can review it before publishing. Direct `ops/nightly-read.sh` invocation keeps the
+VPS mode, which commits and pushes automatically after a successful run.
+
 ## Safety boundary
 
 Verification is destructive by design, but its authority is narrow by construction:
