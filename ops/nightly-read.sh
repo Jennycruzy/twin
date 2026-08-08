@@ -12,7 +12,11 @@
 # genuinely succeeded, and the estate is verified first, so a broken estate produces no
 # history rather than a line asserting something that was not checked.
 #
-# Install:
+# Direct invocation is the VPS cron mode: it commits and pushes after a successful run.
+# `make nightly` sets NIGHTLY_AUTOCOMMIT=0 so a Mac or another operator can inspect the
+# generated evidence and commit it with their normal Git credentials.
+#
+# Install on the VPS:
 #   crontab -e
 #   17 3 * * * /root/twin/ops/nightly-read.sh >> /var/log/twin-nightly.log 2>&1
 
@@ -23,7 +27,13 @@ cd "$(dirname "$0")/.."
 # cron runs with a minimal environment. git needs HOME to find the credential helper that
 # gh installed, and docker compose needs a PATH that includes it.
 export HOME="${HOME:-/root}"
-export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH="/opt/homebrew/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:${PATH:-}"
+
+NIGHTLY_AUTOCOMMIT="${NIGHTLY_AUTOCOMMIT:-1}"
+if [ "$NIGHTLY_AUTOCOMMIT" != "0" ] && [ "$NIGHTLY_AUTOCOMMIT" != "1" ]; then
+  echo "NIGHTLY_AUTOCOMMIT must be 0 or 1" >&2
+  exit 2
+fi
 
 HISTORY="examples/history/nightly.jsonl"
 SCORES="examples/history/fragility.jsonl"
@@ -96,6 +106,11 @@ make --no-print-directory report
 if git diff --quiet -- "$HISTORY" "$SCORES"; then
   say "no new history line; the read must have failed"
   exit 1
+fi
+
+if [ "$NIGHTLY_AUTOCOMMIT" = "0" ]; then
+  say "evidence generated; commit reports/, examples/history/ and examples/verification/ when reviewed"
+  exit 0
 fi
 
 git config user.name jennycruzy
