@@ -192,7 +192,7 @@ The same proof can run without GitHub Actions or GitHub Actions billing:
 
 ```bash
 make nightly
-git add reports/ examples/history/ examples/verification/
+git add reports/ examples/history/ examples/reports/ examples/verification/
 git commit -m "nightly: verified Twin run $(date -u +%Y-%m-%d)"
 git push origin main
 ```

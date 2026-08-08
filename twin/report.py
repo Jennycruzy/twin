@@ -74,6 +74,13 @@ def _verification_artifact(root: Path, report_date: str) -> Path:
     return max(candidates, key=lambda path: (generated_at(path), path.name))
 
 
+def _run_report_artifact(root: Path, report_date: str, name: str, fallback: str) -> Path:
+    dated = root / "examples" / "reports" / "nightly" / report_date / name
+    if dated.exists():
+        return dated
+    return root / "examples" / "reports" / fallback
+
+
 def _json_block(title: str, record: dict[str, Any] | None, source: Path, root: Path) -> str:
     if record is None:
         return f"## {title}\n\nNo record was present in `{_display(source, root)}`.\n\n"
@@ -101,8 +108,12 @@ def render(root: Path = Path(".")) -> Path:
     output_dir = root / "reports" / "nightly" / report_date
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    scorecard_source = root / "examples" / "reports" / "fragility-scorecard.txt"
-    mcp_source = root / "examples" / "reports" / "estate-graph.txt"
+    scorecard_source = _run_report_artifact(
+        root, report_date, "fragility-scorecard.txt", "fragility-scorecard.txt"
+    )
+    mcp_source = _run_report_artifact(
+        root, report_date, "estate-graph.txt", "estate-graph.txt"
+    )
     for source in (scorecard_source, mcp_source):
         if not source.exists():
             raise FileNotFoundError(f"required generated artifact is missing: {source}")

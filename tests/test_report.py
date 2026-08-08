@@ -24,6 +24,10 @@ def test_report_is_generated_only_from_available_artifacts(tmp_path):
     (history / "fragility.jsonl").write_text("")
     (examples_reports / "fragility-scorecard.txt").write_text("score 61.517\n")
     (examples_reports / "estate-graph.txt").write_text("fingerprint abc\n")
+    dated_reports = examples_reports / "nightly" / "2026-08-08"
+    dated_reports.mkdir(parents=True)
+    (dated_reports / "fragility-scorecard.txt").write_text("nightly score 61.517\n")
+    (dated_reports / "estate-graph.txt").write_text("nightly fingerprint abc\n")
     (verification / "merchant_id_nulled_at_source.txt").write_text("precision 0.69\n")
 
     latest = render(tmp_path)
@@ -33,6 +37,9 @@ def test_report_is_generated_only_from_available_artifacts(tmp_path):
     assert "Tests passed: `163`" in text
     assert "Verification precision" not in text
     assert "nightly/2026-08-08/verification.md" in text
-    assert "score 61.517" in (
+    assert "nightly score 61.517" in (
         tmp_path / "reports" / "nightly" / "2026-08-08" / "scorecard.md"
+    ).read_text()
+    assert "nightly fingerprint abc" in (
+        tmp_path / "reports" / "nightly" / "2026-08-08" / "mcp-readback.md"
     ).read_text()
