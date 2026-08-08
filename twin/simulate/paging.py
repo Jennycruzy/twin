@@ -72,7 +72,9 @@ def _severity(graph: EstateGraph, key: str) -> int:
     return weight + (_CONSUMER_BONUS if consumers else 0)
 
 
-def build(graph: EstateGraph, timeline: Timeline) -> PagingList:
+def build(
+    graph: EstateGraph, timeline: Timeline, departed_owner: str | None = None
+) -> PagingList:
     """Turn a timeline into the calls it would generate."""
     by_owner: dict[str, list[Event]] = collections.defaultdict(list)
     unowned: list[str] = []
@@ -80,7 +82,9 @@ def build(graph: EstateGraph, timeline: Timeline) -> PagingList:
     for event in timeline.events:
         if not graph.has(event.key):
             continue
-        owners = graph.asset(event.key).owners
+        owners = tuple(
+            owner for owner in graph.asset(event.key).owners if owner != departed_owner
+        )
         if not owners:
             unowned.append(event.key)
             continue

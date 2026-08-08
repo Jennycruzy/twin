@@ -21,10 +21,8 @@ __pycache__/
 venv/
 *.egg-info/
 
-# Reports are regenerated on every run. Committed sample outputs live in examples/.
-# Anchored: an unanchored `reports/` also matches examples/reports/, which is exactly the
-# directory the line above says is meant to be committed.
-/reports/
+# reports/ is the generated, judge-facing latest-run trail. The example snapshots remain
+# under examples/; both are intentionally reviewable artifacts.
 
 .DS_Store
 

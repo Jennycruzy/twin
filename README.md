@@ -53,6 +53,8 @@ The current repository also contains:
 
 ## Run it
 
+[Latest verified run → reports/LATEST.md](reports/LATEST.md)
+
 Requirements: Docker with Compose v2 and roughly 6 GB of free memory. No cloud account or
 paid service is required.
 
@@ -134,9 +136,11 @@ executed and selects the next useful check.
 
 ## Catalog write-back
 
-Twin writes sixteen structured properties through the DataHub SDK and reads them back over MCP:
-fragility, resilience, rank, blast radius, bus factor, single-point-of-failure status,
-timestamp, provenance, five score components, and context confidence/state/evidence.
+Twin writes seventeen structured properties through the DataHub SDK and reads them back over MCP:
+fragility, resilience, rank, blast radius, illustrative blast-radius cost, bus factor,
+single-point-of-failure status, timestamp, provenance, five score components, and context
+confidence/state/evidence. The cost estimate is always labelled with the assumptions in
+`config/cost_model.yaml`.
 
 ```bash
 make writeback TARGET=operations
@@ -176,9 +180,26 @@ redirects, generated-artifact hygiene, graph serialization, scoring determinism,
 test suite. It runs on every push and pull request through `.github/workflows/tests.yml`, and
 the local pre-push hook invokes the same command inside the tools image.
 
-The nightly job verifies the live estate, reads it over MCP, scores it, writes current
-properties, appends measured history, and cleans up the stack. A failed read does not produce a
-history line.
+The nightly job that actually runs on the VPS is [`ops/nightly-read.sh`](ops/nightly-read.sh),
+installed in host cron because the stack is already up on that box. It verifies the live estate,
+reads it over MCP, scores it, writes current properties, runs a real verification, records the
+test and precision/recall results, and appends measured history. GitHub Actions is disabled on
+this account; `.github/workflows/twin-nightly.yml` remains the reproducible CI-shaped variant
+that builds the stack from nothing, but is not the source of the host's nightly evidence. A
+failed run does not produce a history line.
+
+The same proof can run without GitHub Actions or GitHub Actions billing:
+
+```bash
+make nightly
+git add reports/ examples/history/ examples/reports/ examples/verification/
+git commit -m "nightly: verified Twin run $(date -u +%Y-%m-%d)"
+git push origin main
+```
+
+`make nightly` leaves the generated evidence uncommitted by default so a Mac launchd job or
+cron entry can review it before publishing. Direct `ops/nightly-read.sh` invocation keeps the
+VPS mode, which commits and pushes automatically after a successful run.
 
 ## Safety boundary
 
@@ -211,6 +232,7 @@ operations_estate/    independent logistics warehouse and workload
 scenarios/            commerce fault declarations
 operations_scenarios/ logistics fault declarations
 examples/             outputs captured from real runs
+reports/              generated latest-run evidence for readers who will not run Docker
 docs/                 safety, scoring, and upstream findings
 ```
 

@@ -19,6 +19,9 @@ below is the thing that accumulates.
 | `fragility-scorecard.txt` | `make score` — the knockout sweep and fragility ranking across every dataset |
 | `estate-graph.txt` | `make graph` — the catalog graph read over MCP, summarised with its fingerprint |
 
+The top-level [`reports/LATEST.md`](../reports/LATEST.md) is generated from these artifacts and
+the append-only history, so a reader can inspect the latest evidence without running Docker.
+
 ## verification/
 
 One file per scenario, each the full transcript of `make run`: the predicted timeline, the

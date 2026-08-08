@@ -11,6 +11,8 @@
 # parts instead of accepted or rejected whole.
 #
 # See docs/SCORING.md for what each component means and why it is weighted this way.
+# The illustrative dollar translation of a measured blast radius lives separately in
+# config/cost_model.yaml so changing cost assumptions cannot silently change fragility.
 
 weights:
   # How much falls over. The obvious component, and deliberately not the largest — an

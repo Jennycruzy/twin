@@ -8,6 +8,11 @@ This document exists because the score is the most falsifiable thing Twin produc
 easiest thing to fake. Everything below is derived from the estate; nothing is a judgement
 Twin brought with it.
 
+The score also publishes an illustrative `twin_blast_radius_cost` dimension. It is not part of
+the fragility score: it translates the measured lost datasets and affected dashboards under the
+explicit assumptions in `config/cost_model.yaml`. Commands print those assumptions beside every
+cost so a dollar estimate cannot be mistaken for a universal outage price.
+
 ## The test the model has to pass
 
 The estate contains structural weaknesses that are not annotated anywhere in this

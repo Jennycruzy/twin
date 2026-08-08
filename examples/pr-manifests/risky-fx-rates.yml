@@ -1,0 +1,6 @@
+# Demonstration manifest for the PR-risk gate. The changed PR must identify the assets it
+# touches explicitly; the gate scores those names against the cached graph.
+target: commerce
+high_fragility_threshold: 50.0
+changed_assets:
+  - raw_pg.fx_rates

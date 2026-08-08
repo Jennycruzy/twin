@@ -75,7 +75,9 @@ def _print_report(graph: EstateGraph, elapsed: float, previous: str | None, cach
     print()
 
 
-def _append_history(graph: EstateGraph, path: Path) -> None:
+def _append_history(
+    graph: EstateGraph, path: Path, extras: dict[str, object] | None = None
+) -> None:
     """Append one line describing this read to the nightly history.
 
     The fragility trend is only real if the runs actually happened, so history accumulates
@@ -99,6 +101,8 @@ def _append_history(graph: EstateGraph, path: Path) -> None:
         "column_edges": len(graph.column_edges),
         "unowned_datasets": sum(1 for a in datasets if not a.is_owned),
     }
+    if extras:
+        record.update({key: value for key, value in extras.items() if value is not None})
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a") as history:
         history.write(json.dumps(record, sort_keys=True) + "\n")
@@ -122,10 +126,28 @@ def main(argv: Iterable[str] | None = None) -> int:
         metavar="PATH",
         help="append one JSON line describing this read, for the nightly trend",
     )
+    parser.add_argument("--tests-passed", type=int, help="pytest tests passed in this pipeline")
+    parser.add_argument(
+        "--verification-precision", type=float, help="precision from the actual verification run"
+    )
+    parser.add_argument(
+        "--verification-recall", type=float, help="recall from the actual verification run"
+    )
+    parser.add_argument("--pipeline-status", help="final pipeline status for the history record")
+    parser.add_argument(
+        "--verification-artifact", help="path to the captured verification result artifact"
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
     target = load_target(args.target)
     gms = args.gms or gms_url()
     cache_dir = args.cache_dir or target.cache_dir
+    history_extras = {
+        "tests_passed": args.tests_passed,
+        "verification_precision": args.verification_precision,
+        "verification_recall": args.verification_recall,
+        "pipeline_status": args.pipeline_status,
+        "verification_artifact": args.verification_artifact,
+    }
 
     if args.cached:
         graph = load_latest(cache_dir)
@@ -133,6 +155,8 @@ def main(argv: Iterable[str] | None = None) -> int:
             print("no cached graph; run without --cached first", file=sys.stderr)
             return 2
         print(f"\n  {graph.summary_line()}\n  read at {graph.read_at} from {graph.source}\n")
+        if args.append_history:
+            _append_history(graph, args.append_history, history_extras)
         return 0
 
     previous = previous_fingerprint(cache_dir)
@@ -156,7 +180,7 @@ def main(argv: Iterable[str] | None = None) -> int:
 
     entry = store(graph, cache_dir)
     if args.append_history:
-        _append_history(graph, args.append_history)
+        _append_history(graph, args.append_history, history_extras)
     _print_report(graph, elapsed, previous, entry.path)
     print(f"  {graph.summary_line()}\n")
     return 0

@@ -157,6 +157,17 @@ unwrite: ## Remove everything Twin wrote to DataHub
 examples: ## Regenerate examples/ from real runs (needs the stack up; ~7 min)
 	@./ops/capture-examples.sh
 
+.PHONY: report
+report: ## Generate reports/LATEST.md and the dated judge-facing evidence bundle
+	@$(SAY) "Rendering the latest verified run from generated artifacts."
+	@$(RUN) python -m twin.report
+
+.PHONY: nightly
+NIGHTLY_AUTOCOMMIT ?= 0
+nightly: ## Run the local nightly proof; defaults to leaving artifacts for a manual commit
+	@$(SAY) "Running the local nightly proof without GitHub Actions."
+	@NIGHTLY_AUTOCOMMIT=$(NIGHTLY_AUTOCOMMIT) ./ops/nightly-read.sh
+
 .PHONY: repair
 REPAIR_OUTPUT_DIR ?= examples/repair-prs
 REPAIR_SCENARIO ?=
@@ -168,6 +179,13 @@ repair: ## Generate an evidence-backed catalog repair proposal
 gate: ## Run repository invariants, target validation, determinism checks and tests
 	@$(SAY) "Running the repository quality gate."
 	@$(RUN) python -m twin.gate
+
+.PHONY: pr-gate
+PR_MANIFEST ?= examples/pr-manifests/risky-fx-rates.yml
+PR_COMMENT ?= reports/PR_GATE.md
+pr-gate: ## Score manifest-declared changed assets and emit a Markdown PR comment
+	@$(SAY) "Scoring changed assets from $(PR_MANIFEST) against the cached graph."
+	@$(RUN) python -m twin.gate.pr --manifest $(PR_MANIFEST) --output $(PR_COMMENT)
 
 # ------------------------------------------------------------------ tests
 

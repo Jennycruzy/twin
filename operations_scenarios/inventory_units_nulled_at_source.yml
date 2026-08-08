@@ -1,0 +1,8 @@
+name: inventory_units_nulled_at_source
+title: Inventory units disappear in the ERP feed
+description: The inventory feed still lands, but its on-hand quantity is no longer populated.
+fault:
+  kind: null_out_column
+  asset: ops_erp.inventory_snapshots
+  column: units_on_hand
+  at: "05:30"

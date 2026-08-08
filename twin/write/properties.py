@@ -118,6 +118,17 @@ DEFINITIONS: tuple[PropertyDefinition, ...] = (
         ),
     ),
     PropertyDefinition(
+        id=f"{PREFIX}blast_radius_cost",
+        display_name="Twin: blast radius cost",
+        value_type=NUMBER,
+        description=(
+            "Illustrative dollar estimate for the measured blast radius. It applies the "
+            "configurable engineer-hours per broken model and consumer-hours per affected "
+            "dashboard assumptions in config/cost_model.yaml; it is not a universal claim "
+            "about the cost of an outage."
+        ),
+    ),
+    PropertyDefinition(
         id=f"{PREFIX}bus_factor",
         display_name="Twin: bus factor",
         value_type=NUMBER,
@@ -227,6 +238,7 @@ def values_for(
         f"{PREFIX}resilience_score": round(100.0 - score.score, 3),
         f"{PREFIX}fragility_rank": rank,
         f"{PREFIX}blast_radius": score.knockout.blast,
+        f"{PREFIX}blast_radius_cost": round(score.blast_radius_cost, 2),
         f"{PREFIX}bus_factor": bus_factor(score),
         f"{PREFIX}is_spof": "yes" if is_spof(score) else "no",
         f"{PREFIX}scored_at": scored_at,

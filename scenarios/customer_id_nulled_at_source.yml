@@ -1,0 +1,8 @@
+name: customer_id_nulled_at_source
+title: Customer identity disappears in the orders feed
+description: The orders feed still lands, but its customer key is no longer populated.
+fault:
+  kind: null_out_column
+  asset: raw_pg.orders
+  column: customer_id
+  at: "05:30"

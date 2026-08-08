@@ -25,6 +25,7 @@ from twin.read.cache import load_latest, store
 from twin.read.mcp_client import DataHubMCP
 from twin.read.model import KIND_DATASET, EstateGraph
 from twin.score.fragility import CONFIG, Score, Weights, score_estate
+from twin.score.cost import CostModel
 from twin.score.knockout import sweep
 from twin.score.usage import read_usage
 from twin.write.catalog import Catalog, WriteBackError
@@ -52,7 +53,9 @@ def _scored(
     graph: EstateGraph, config: Path, target: TwinTarget
 ) -> tuple[Score, ...]:
     weights = Weights.load(config)
-    return score_estate(graph, sweep(graph), read_usage(scope=target.catalog), weights)
+    return score_estate(
+        graph, sweep(graph), read_usage(scope=target.catalog), weights, CostModel.load()
+    )
 
 
 def _dataset_urns(graph: EstateGraph, key: str) -> tuple[str, ...]:
@@ -81,7 +84,8 @@ def _provenance_line(graph: EstateGraph) -> str:
 
 def _write(graph: EstateGraph, config: Path, target: TwinTarget) -> int:
     usage = read_usage(scope=target.catalog)
-    scores = score_estate(graph, sweep(graph), usage, Weights.load(config))
+    cost_model = CostModel.load()
+    scores = score_estate(graph, sweep(graph), usage, Weights.load(config), cost_model)
     catalog = Catalog.connect()
 
     defined = catalog.bootstrap()
@@ -109,6 +113,7 @@ def _write(graph: EstateGraph, config: Path, target: TwinTarget) -> int:
         # estate is scored" and "most of it is", and only one of those is true.
         print(f"  skipped {len(skipped)} with no dataset URN: {', '.join(sorted(skipped)[:5])}")
     print(f"  provenance: {line}")
+    print(f"  blast-radius cost is illustrative, {cost_model.assumptions_line()}")
     print("\n  prove it with: make prove-writeback")
     print("  remove it with: make unwrite\n")
     return 0
@@ -153,7 +158,7 @@ def _prove(graph: EstateGraph, limit: int) -> int:
     print()
     print("  FRAGILITY, READ BACK OVER MCP")
     print(_RULE)
-    print(f"  {'RANK':>5}  {'ASSET':<40}{'SCORE':>8}{'CTX':>6}{'BLAST':>7}{'BUS':>5}{'SPOF':>6}")
+    print(f"  {'RANK':>5}  {'ASSET':<40}{'SCORE':>8}{'CTX':>6}{'BLAST':>7}{'COST':>10}{'BUS':>5}{'SPOF':>6}")
     print(_RULE)
     for key, values in rows[:limit]:
         print(
@@ -161,11 +166,13 @@ def _prove(graph: EstateGraph, limit: int) -> int:
             f"{_number(values.get(f'{PREFIX}fragility_score')) or 0:>8.3f}"
             f"{_number(values.get(f'{PREFIX}context_confidence')) or 0:>6.2f}"
             f"{_as_int(values.get(f'{PREFIX}blast_radius')):>7}"
+            f"${_number(values.get(f'{PREFIX}blast_radius_cost')) or 0:>9,.2f}"
             f"{_as_int(values.get(f'{PREFIX}bus_factor')):>5}"
             f"{str(values.get(f'{PREFIX}is_spof', '—')):>6}"
         )
     print(_RULE)
     print(f"  {len(rows)} of {len(urns)} assets carry Twin's properties, read over MCP")
+    print(f"  blast-radius cost is illustrative, {CostModel.load().assumptions_line()}")
     if rows:
         print(f"  provenance in the catalog: {rows[0][1].get(f'{PREFIX}scoring_provenance', '—')}")
     print()

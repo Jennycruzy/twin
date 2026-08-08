@@ -1,0 +1,16 @@
+# A real outage with one operational fact changed: the person the catalog would page has
+# left. The data fault is still executed and graded in the shadow warehouse; the paging
+# output makes the missing owner visible instead of silently treating the directory as live.
+
+name: owner_departure
+title: The FX feed fails after its owner leaves
+description: |
+  The FX source disappears while its declared owner is no longer available. Twin keeps the
+  warehouse fault and the measured blast radius unchanged, but removes the departed owner
+  from the paging list so the outage shows who nobody can call.
+
+fault:
+  kind: drop_asset
+  asset: raw_pg.fx_rates
+  departed_owner: priya.raghavan@example.com
+  at: "04:12"

@@ -33,6 +33,7 @@ from typing import Iterable, Mapping
 import yaml
 
 from twin.read.model import KIND_DATASET, EstateGraph
+from twin.score.cost import CostModel
 from twin.score.knockout import Knockout
 from twin.score.usage import Usage
 
@@ -104,6 +105,7 @@ class Score:
     components: Mapping[str, float]
     raw: Mapping[str, float]
     knockout: Knockout = field(repr=False)
+    blast_radius_cost: float = 0.0
 
     def explain(self) -> str:
         return "  ".join(f"{name[:4]} {self.components[name]:.2f}" for name in COMPONENTS)
@@ -196,6 +198,7 @@ def score_estate(
     knockouts: Iterable[Knockout],
     usage: Mapping[str, Usage],
     weights: Weights,
+    cost_model: CostModel | None = None,
 ) -> tuple[Score, ...]:
     """Score every asset in the sweep, ranked most fragile first."""
     shots = {shot.key: shot for shot in knockouts}
@@ -240,6 +243,7 @@ def score_estate(
         "blindness": blindness,
     }
 
+    cost_model = cost_model or CostModel.load()
     scores = [
         Score(
             key=key,
@@ -248,6 +252,9 @@ def score_estate(
             components={name: normalised[name][key] for name in COMPONENTS},
             raw={name: raw[name][key] for name in COMPONENTS},
             knockout=shots[key],
+            blast_radius_cost=cost_model.estimate(
+                graph, shots[key].datasets_lost, shots[key].consumers_lost
+            ),
         )
         for key in shots
     ]

@@ -1,0 +1,11 @@
+--- a/operations_estate/dbt/models/sources.yml
++++ b/operations_estate/dbt/models/sources.yml
+@@ -32,6 +32,8 @@
+           - name: priority
+       - name: inventory_snapshots
+         meta: {owner: lin.nguyen@example.com, team: network-operations, refresh_cadence: every_3_days, sla_hours: 12, replicated: false, criticality_tier: tier2}
++        columns:
++          - name: units_on_hand
+       - name: work_orders
+         meta: {owner: diego.mora@example.com, team: facilities, refresh_cadence: hourly, sla_hours: 4, replicated: true, criticality_tier: tier2}
+ 
