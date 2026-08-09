@@ -39,7 +39,10 @@ def test_report_is_generated_only_from_available_artifacts(tmp_path):
     ).read_text()
 
 
-def _artifacts(tmp_path, *, target="commerce", read_at="2026-08-08T03:17:00+00:00"):
+def _artifacts(
+    tmp_path, *, target="commerce", read_at="2026-08-08T03:17:00+00:00",
+    verification_artifact=None,
+):
     history = tmp_path / "examples" / "history" / target
     examples_reports = tmp_path / "examples" / "reports" / target
     verification = tmp_path / "examples" / "verification"
@@ -52,6 +55,11 @@ def _artifacts(tmp_path, *, target="commerce", read_at="2026-08-08T03:17:00+00:0
                 "fingerprint": "abc",
                 "pipeline_status": "succeeded",
                 "target": target,
+                **(
+                    {"verification_artifact": verification_artifact}
+                    if verification_artifact
+                    else {}
+                ),
             }
         )
         + "\n"
@@ -147,7 +155,11 @@ def test_two_runs_on_one_date_keep_separate_artifacts(tmp_path):
     committed history line already pointed at, leaving that line asserting a precision the
     file it referenced no longer showed.
     """
-    _artifacts(tmp_path, read_at="2026-08-08T03:17:00+00:00")
+    _artifacts(
+        tmp_path,
+        read_at="2026-08-08T03:17:00+00:00",
+        verification_artifact="examples/verification/nightly-commerce-2026-08-08T03-17-00.txt",
+    )
     verification = tmp_path / "examples" / "verification"
 
     morning = verification / "nightly-commerce-2026-08-08T03-17-00.txt"
@@ -160,7 +172,10 @@ def test_two_runs_on_one_date_keep_separate_artifacts(tmp_path):
     assert morning.read_text().endswith("precision 0.69\n")
     assert afternoon.read_text().endswith("precision 1.00\n")
     body = (tmp_path / "reports" / "nightly" / "2026-08-08" / "commerce" / "verification.md").read_text()
-    assert "precision 1.00" in body, "the newest capture on the date should be reported"
+    assert "precision 0.69" in body, "the reported run's own capture should be reported"
+    assert "precision 1.00" not in body, (
+        "a later capture belongs to a later run; the record above it did not produce it"
+    )
 
 
 def test_a_date_only_artifact_written_before_the_rename_is_still_found(tmp_path):

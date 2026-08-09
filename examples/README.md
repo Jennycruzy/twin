@@ -5,11 +5,30 @@ Output from real runs against a live stack. Nothing here is written by hand.
 Every `.txt` file is the captured stdout of a command that actually executed, with a header
 naming the commit it came from and when it ran. `ops/capture-examples.sh` produces them and
 `make examples` invokes it. If a command fails, its artifact is left as it was rather than
-being overwritten with the failure — so a file here is always the output of a run that
-succeeded, and the header says which one.
+being overwritten with the failure — so a file here is always the complete output of a command
+that succeeded, and the header says which commit it ran at.
+
+A capture under `verification/` records one command, not one pipeline. A nightly can produce a
+complete verification capture and then fail at a later stage, appending no history: the capture
+is real output, but it belongs to a run that did not finish.
+`nightly-commerce-2026-08-08.txt` is exactly that case — its run is recorded as failed in
+`history/attempts.jsonl`. Reports resolve the capture a successful record names for itself, so a
+capture like that one is never presented as another run's evidence.
 
 Deliberately not regenerated on a schedule. These are snapshots of a commit; the history
 below is the thing that accumulates.
+
+## campaign/
+
+| file | what produced it |
+|---|---|
+| `commerce-campaign-evidence.jsonl` | `make campaign TARGET=commerce CAMPAIGN_EXECUTE=1` |
+| `operations-campaign-evidence.jsonl` | `make campaign TARGET=operations CAMPAIGN_EXECUTE=1` |
+| `commerce-context-readback.txt` | the published `verification` component read back from DataHub |
+
+The ledgers are the evidence behind the `verification` component of context confidence. They
+are copied out of the ignored `.twin/` cache so the published claim can be audited from a
+clone; the cache remains the working copy.
 
 ## reports/
 

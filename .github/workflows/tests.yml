@@ -5,9 +5,10 @@
 # that nobody installed, so a target that looks green locally cannot actually run. Building
 # the environment from the declared dependencies is what makes that visible.
 #
-# These tests need neither DataHub nor a warehouse. The integration checks that do —
-# `make verify-estate` and `make run` — are exercised by the nightly workflow, which stands
-# the whole stack up.
+# These tests need neither DataHub nor a warehouse. Of the integration checks that do, the
+# nightly workflow stands the stack up and runs `make verify-estate` only. Scenario execution,
+# scoring, write-back, and report rendering are exercised by ops/nightly-read.sh on the VPS,
+# which is the authoritative nightly; the workflow is a reduced smoke test, not a mirror of it.
 
 name: tests
 

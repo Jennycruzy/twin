@@ -1,0 +1,22 @@
+# published context confidence, read back from DataHub
+# generated at 2026-08-09T19:50:39Z from commit dd8df8f
+# the verification component is derived from examples/campaign/*-campaign-evidence.jsonl
+
+  operations.warehouse.ops_staging.stg_shipments lineage=1.00;schema=1.00;operational=0.40;ownership=1.00;usage=0.00;verification=1.00
+  warehouse.raw_pg.fx_rates                      lineage=1.00;schema=0.62;operational=1.00;ownership=1.00;usage=0.00;verification=0.00
+  warehouse.staging.stg_fx_rates                 lineage=1.00;schema=0.62;operational=0.80;ownership=1.00;usage=0.00;verification=1.00
+  warehouse.staging.stg_shipments                lineage=1.00;schema=1.00;operational=0.80;ownership=1.00;usage=0.00;verification=0.00
+
+  campaign ranking after executing fx_rate_column_drop:
+
+     #  SCENARIO                               PRIORITY  IMPACT     GAP STATE    FAULT
+    --------------------------------------------------------------------------------------------
+     1  owner_departure                           0.536   0.615   0.225 partial  raw_pg.fx_rates
+     2  fx_rate_type_regression                   0.535   0.613   0.225 partial  staging.stg_fx_rates
+     3  fx_rate_column_drop                       0.415   0.613   0.225 partial  staging.stg_fx_rates
+     4  merchant_id_nulled                        0.410   0.379   0.200 high     staging.stg_orders
+     5  orders_feed_stalls                        0.410   0.379   0.200 high     staging.stg_orders
+     6  customer_id_nulled_at_source              0.391   0.378   0.150 high     raw_pg.orders
+     7  merchant_id_nulled_at_source              0.391   0.378   0.150 high     raw_pg.orders
+     8  payments_table_dropped                    0.356   0.273   0.200 high     staging.stg_payments
+    --------------------------------------------------------------------------------------------

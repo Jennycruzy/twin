@@ -146,6 +146,8 @@ has actually broken is distinguishable in the catalog from one it has only reaso
 Executing `fx_rate_column_drop` on commerce demoted it from first to third and promoted
 `owner_departure` to first; `staging.stg_fx_rates` now reads `verification=1.00` while
 `raw_pg.fx_rates`, ranked first for fragility, still reads `0.00` and is the next selection.
+The ledgers behind those values and the read-back that shows them are committed under
+[`examples/campaign/`](examples/campaign/), so the claim can be checked without this machine.
 
 ## Catalog write-back
 
