@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Iterable
 
 from twin import provenance
-from twin.context import confidence as context_confidence
+from twin.context import confidence as context_confidence, evidence_path, verified_assets
 from twin.read import gms_url, read_estate
 from twin.read.cache import load_latest, store
 from twin.read.mcp_client import DataHubMCP
@@ -92,6 +92,11 @@ def _write(graph: EstateGraph, config: Path, target: TwinTarget) -> int:
     print(f"\n  defined {len(defined)} structured properties")
 
     line = _provenance_line(graph)
+    # The campaign ledger is what makes verification evidence rather than assertion. Reading
+    # it here is what lets a published property distinguish an asset Twin has actually broken
+    # from one it has only reasoned about; without it every asset reports verification=0.00
+    # no matter how many experiments have run.
+    verified = verified_assets(evidence_path(target.cache_dir), graph.fingerprint)
     written = 0
     skipped = []
     for rank, score in enumerate(scores, start=1):
@@ -101,7 +106,7 @@ def _write(graph: EstateGraph, config: Path, target: TwinTarget) -> int:
             continue
         values = values_for(
             score, rank, graph.read_at, line,
-            context=context_confidence(graph, score.key, usage),
+            context=context_confidence(graph, score.key, usage, verified),
         )
         for urn in urns:
             catalog.write_values(urn, values)
