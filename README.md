@@ -50,9 +50,10 @@ reports that instead of tuning it away.
 
 The current repository also contains:
 
-- 181 passing tests;
+- 185 passing tests;
 - deterministic experiment selection that lowers verification novelty after a real run;
-- context confidence written as three auditable DataHub properties;
+- context confidence written as three auditable DataHub properties, including which assets
+  have been broken for real and which are still ranked on inference alone;
 - final MCP read-back of Twin properties on 66 commerce and 25 operations assets;
 - a reviewable repair proposal for a missing source-column contract;
 - a repository gate used by local pushes and GitHub Actions.
@@ -139,6 +140,12 @@ make campaign TARGET=operations CAMPAIGN_EXECUTE=1
 It ranks candidate experiments by measured impact, context gap, and verification novelty. A
 real run appends evidence to the target cache; the next plan discounts the experiment just
 executed and selects the next useful check.
+
+That evidence is also what the published `verification` component reports, so an asset Twin
+has actually broken is distinguishable in the catalog from one it has only reasoned about.
+Executing `fx_rate_column_drop` on commerce demoted it from first to third and promoted
+`owner_departure` to first; `staging.stg_fx_rates` now reads `verification=1.00` while
+`raw_pg.fx_rates`, ranked first for fragility, still reads `0.00` and is the next selection.
 
 ## Catalog write-back
 
