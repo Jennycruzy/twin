@@ -50,7 +50,7 @@ reports that instead of tuning it away.
 
 The current repository also contains:
 
-- 159 passing tests;
+- 181 passing tests;
 - deterministic experiment selection that lowers verification novelty after a real run;
 - context confidence written as three auditable DataHub properties;
 - final MCP read-back of Twin properties on 66 commerce and 25 operations assets;

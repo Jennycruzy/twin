@@ -22,7 +22,7 @@ import os
 import sys
 import time
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Any, Iterable
 
 from datahub.ingestion.graph.client import DataHubGraph, DatahubClientConfig
 from datahub.metadata.schema_classes import (
@@ -32,6 +32,8 @@ from datahub.metadata.schema_classes import (
     OwnershipClass,
     UpstreamLineageClass,
 )
+
+from twin.target import CatalogScope, load_target
 
 # The estate's intended shape. These are the numbers `make estate` builds, and a mismatch
 # means the build is incomplete rather than that the threshold is wrong.
@@ -62,12 +64,25 @@ class Check:
 class EstateInspector:
     """Reads the estate once, then answers questions about it."""
 
-    def __init__(self, graph: DataHubGraph) -> None:
+    def __init__(self, graph: DataHubGraph, scope: CatalogScope) -> None:
         self.graph = graph
-        self.postgres = sorted(graph.get_urns_by_filter(entity_types=["dataset"], platform="postgres"))
-        self.dbt = sorted(graph.get_urns_by_filter(entity_types=["dataset"], platform="dbt"))
-        self.dashboards = sorted(graph.get_urns_by_filter(entity_types=["dashboard"]))
-        self.charts = sorted(graph.get_urns_by_filter(entity_types=["chart"]))
+        self.scope = scope
+        self.postgres = self.scoped(entity_types=["dataset"], platform="postgres")
+        self.dbt = self.scoped(entity_types=["dataset"], platform="dbt")
+        self.dashboards = self.scoped(entity_types=["dashboard"])
+        self.charts = self.scoped(entity_types=["chart"])
+
+    def scoped(self, **query: Any) -> list[str]:
+        """Search the catalog and keep only what belongs to this target.
+
+        A single DataHub instance holds every estate at once, so an unscoped entity search
+        answers a question about the deployment rather than about this estate. Counting the
+        deployment is how a correct 66-dataset commerce estate reported 91 and failed.
+        """
+        return sorted(
+            urn for urn in self.graph.get_urns_by_filter(**query)
+            if self.scope.accepts({"urn": urn})
+        )
 
     @staticmethod
     def logical_name(urn: str) -> str:
@@ -147,8 +162,8 @@ class EstateInspector:
 
     def ml_path(self) -> list[str]:
         """Resolve feature table -> features -> model -> deployment, or return what broke."""
-        tables = list(self.graph.get_urns_by_filter(entity_types=["mlFeatureTable"]))
-        models = list(self.graph.get_urns_by_filter(entity_types=["mlModel"]))
+        tables = self.scoped(entity_types=["mlFeatureTable"])
+        models = self.scoped(entity_types=["mlModel"])
         if not tables or not models:
             return []
         table_props = self.graph.get_aspect(tables[0], MLFeatureTablePropertiesClass)
@@ -177,7 +192,7 @@ def run_checks(
     top_owner, top_count = owners.most_common(1)[0] if owners else ("none", 0)
     top_share = top_count / len(logical) if logical else 0.0
 
-    features = list(inspector.graph.get_urns_by_filter(entity_types=["mlFeature"]))
+    features = inspector.scoped(entity_types=["mlFeature"])
 
     checks = [
         Check("Datasets (postgres)", str(len(inspector.postgres)), f"= {EXPECTED_DATASETS}",
@@ -250,7 +265,7 @@ def print_report(
     print()
 
 
-def settle(graph: DataHubGraph, timeout: float, interval: float) -> tuple:
+def settle(graph: DataHubGraph, scope: CatalogScope, timeout: float, interval: float) -> tuple:
     """Read the estate repeatedly until the catalog stops changing.
 
     DataHub indexes asynchronously through OpenSearch, so ingestion returns before the
@@ -269,7 +284,7 @@ def settle(graph: DataHubGraph, timeout: float, interval: float) -> tuple:
     previous: tuple[str, ...] | None = None
 
     while True:
-        inspector = EstateInspector(graph)
+        inspector = EstateInspector(graph, scope)
         result = run_checks(inspector)
         checks = result[0]
         observed = tuple(c.observed for c in checks)
@@ -309,7 +324,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         return 2
 
     inspector, checks, owners, unowned, downstream, ml_path = settle(
-        graph, args.settle_timeout, args.settle_interval
+        graph, load_target().catalog, args.settle_timeout, args.settle_interval
     )
     print_report(checks, owners, unowned, len(inspector.postgres), downstream, ml_path)
 
