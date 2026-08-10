@@ -23,14 +23,15 @@ the interesting case is where **size and danger disagree**.
 datasets and 22 consumers. `raw_pg.fx_rates` reaches slightly less: 15 and 21. A scorer that
 ranks by fan-out returns orders.
 
-Twin ranks fx_rates first and orders fourth:
+Twin ranks fx_rates first and orders fifth:
 
 ```
    #  ASSET                             SCORE   blast  expos  recov  conce  blind   BLAST
-   1  raw_pg.fx_rates                    77.9    0.95   0.95   1.00   0.29   0.12   15+21
-   2  staging.stg_fx_rates               77.4    0.92   0.95   1.00   0.30   0.12   14+21
-   3  intermediate.int_orders_enriched   58.6    0.87   0.93   0.33   0.35   0.00   12+21
-   4  raw_pg.orders                      55.1    1.00   1.00   0.00   0.26   0.12   16+22
+   1  raw_pg.fx_rates                    61.5    0.40   0.84   1.00   0.29   0.12   15+21
+   2  staging.stg_fx_rates               61.3    0.38   0.84   1.00   0.30   0.12   14+21
+   3  intermediate.int_orders_enriched   43.3    0.36   0.83   0.33   0.35   0.00   12+21
+   4  staging.stg_orders                 37.9    0.41   0.89   0.00   0.29   0.12   15+22
+   5  raw_pg.orders                      37.8    0.42   0.89   0.00   0.26   0.12   16+22
 ```
 
 Orders wins on blast and on exposure — the two components most scorers would use — and loses
