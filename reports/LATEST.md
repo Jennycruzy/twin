@@ -7,7 +7,7 @@ so two estates' numbers are not comparable and are never combined here.
 
 ## commerce
 
-Run artifacts: [`reports/nightly/2026-08-12/commerce/`](nightly/2026-08-12/commerce/)
+Run artifacts: [`reports/nightly/2026-08-13/commerce/`](nightly/2026-08-13/commerce/)
 
 Pipeline status: `succeeded`
 Tests passed: `187`
@@ -16,16 +16,16 @@ Verification recall: `1.0`
 
 | Evidence | Generated artifact |
 |---|---|
-| Scorecard | [scorecard](nightly/2026-08-12/commerce/scorecard.md) |
-| Verification result | [verification](nightly/2026-08-12/commerce/verification.md) |
-| MCP readback | [MCP readback](nightly/2026-08-12/commerce/mcp-readback.md) |
-| Estate fingerprint | [fingerprint](nightly/2026-08-12/commerce/estate-fingerprint.md) |
+| Scorecard | [scorecard](nightly/2026-08-13/commerce/scorecard.md) |
+| Verification result | [verification](nightly/2026-08-13/commerce/verification.md) |
+| MCP readback | [MCP readback](nightly/2026-08-13/commerce/mcp-readback.md) |
+| Estate fingerprint | [fingerprint](nightly/2026-08-13/commerce/estate-fingerprint.md) |
 
 History source: `examples/history/commerce/nightly.jsonl` and `examples/history/commerce/fragility.jsonl`.
 
 ## operations
 
-Run artifacts: [`reports/nightly/2026-08-12/operations/`](nightly/2026-08-12/operations/)
+Run artifacts: [`reports/nightly/2026-08-13/operations/`](nightly/2026-08-13/operations/)
 
 Pipeline status: `succeeded`
 Tests passed: `187`
@@ -34,9 +34,9 @@ Verification recall: `1.0`
 
 | Evidence | Generated artifact |
 |---|---|
-| Scorecard | [scorecard](nightly/2026-08-12/operations/scorecard.md) |
-| Verification result | [verification](nightly/2026-08-12/operations/verification.md) |
-| MCP readback | [MCP readback](nightly/2026-08-12/operations/mcp-readback.md) |
-| Estate fingerprint | [fingerprint](nightly/2026-08-12/operations/estate-fingerprint.md) |
+| Scorecard | [scorecard](nightly/2026-08-13/operations/scorecard.md) |
+| Verification result | [verification](nightly/2026-08-13/operations/verification.md) |
+| MCP readback | [MCP readback](nightly/2026-08-13/operations/mcp-readback.md) |
+| Estate fingerprint | [fingerprint](nightly/2026-08-13/operations/estate-fingerprint.md) |
 
 History source: `examples/history/operations/nightly.jsonl` and `examples/history/operations/fragility.jsonl`.
